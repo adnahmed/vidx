@@ -1,0 +1,55 @@
+services:
+  api: &main_app
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: vidx:${VIDX_VERSION:-latest}
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      VIDX_HOST: 0.0.0.0
+      VIDX_DB_HOST: vidx-db
+      VIDX_DB_PORT: 27017
+      VIDX_DB_USER: vidx
+      VIDX_DB_PASS: vidx
+      VIDX_DB_BASE: admin
+      VIDX_REDIS_HOST: vidx-redis
+  db:
+    image: mongo:7.0
+    hostname: vidx-db
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "vidx"
+      MONGO_INITDB_ROOT_PASSWORD: "vidx"
+    command: "mongod"
+    volumes:
+      - vidx-db-data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 40
+
+  redis:
+    image: bitnami/redis:6.2.5
+    hostname: "vidx-redis"
+    restart: always
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+    healthcheck:
+      test: redis-cli ping
+      interval: 1s
+      timeout: 3s
+      retries: 50
+
+
+
+volumes:
+  vidx-db-data:
+    name: vidx-db-data
