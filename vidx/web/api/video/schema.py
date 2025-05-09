@@ -136,6 +136,16 @@ class VideoStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class ValidationErrorCodes(str, Enum):
+    """Enum for validation error codes."""
+
+    INVALID_VIDEO_MIME_TYPE = "INVALID_VIDEO_MIME_TYPE"
+    INVALID_AUDIO_MIME_TYPE = "INVALID_AUDIO_MIME_TYPE"
+    AUDIO_TOO_SHORT = "AUDIO_TOO_SHORT"
+    TOO_MANY_VIDEO_FILES = "TOO_MANY_VIDEO_FILES"
+    INVALID_TRANSITION = "INVALID_TRANSITION"
+
+
 class VideoMergeOutputDto(BaseModel):
     """Output DTO for video merge operation."""
 
@@ -167,6 +177,7 @@ class VideoMergeInputDto(AsyncValidationModelMixin, BaseModel):
         if value not in available_transitions:
             raise ValueError(
                 f"Invalid transition. Must be one of {available_transitions}",
+                ValidationErrorCodes.INVALID_TRANSITION,
             )
         return value
 
@@ -186,11 +197,17 @@ class VideoMergeInputDto(AsyncValidationModelMixin, BaseModel):
             List[str]: Validated list of video file paths.
         """
         if len(value) > MAX_VIDEO_FILES:
-            raise ValueError(f"Too many video files. Max allowed is {MAX_VIDEO_FILES}")
+            raise ValueError(
+                f"Too many video files. Max allowed is {MAX_VIDEO_FILES}",
+                ValidationErrorCodes.TOO_MANY_VIDEO_FILES,
+            )
         for path in value:
             mime = get_mime_type(path)
             if mime not in VALID_VIDEO_MIME_TYPES:
-                raise ValueError(f"Invalid video MIME type for file {path}: {mime}")
+                raise ValueError(
+                    f"Invalid video MIME type for file {path}: {mime}",
+                    ValidationErrorCodes.INVALID_VIDEO_MIME_TYPE,
+                )
         return value
 
     @async_field_validator("audio")
@@ -208,7 +225,10 @@ class VideoMergeInputDto(AsyncValidationModelMixin, BaseModel):
         audio_path = self.audio
         mime = get_mime_type(audio_path)
         if mime not in VALID_AUDIO_MIME_TYPES:
-            raise ValueError(f"Invalid audio MIME type: {mime}")
+            raise ValueError(
+                f"Invalid audio MIME type: {mime}",
+                ValidationErrorCodes.INVALID_AUDIO_MIME_TYPE,
+            )
 
         # Calculate durations
         audio_duration = await get_audio_duration(audio_path)
@@ -219,6 +239,7 @@ class VideoMergeInputDto(AsyncValidationModelMixin, BaseModel):
         if audio_duration < total_video_duration:
             raise ValueError(
                 f"Audio is too short. Must be at least {total_video_duration} seconds",
+                ValidationErrorCodes.AUDIO_TOO_SHORT,
             )
 
         if audio_duration > total_video_duration:
