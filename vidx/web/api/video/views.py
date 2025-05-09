@@ -5,6 +5,7 @@ from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import ValidationError
+from starlette import status
 
 from vidx.web.api.video.schema import (
     VideoMergeInputDto,
@@ -26,7 +27,11 @@ def save_upload_file_to_temp(upload_file: UploadFile, suffix: str = "") -> str:
 router = APIRouter()
 
 
-@router.post("/merge", response_model=VideoMergeOutputDto)
+@router.post(
+    "/merge",
+    response_model=VideoMergeOutputDto,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def merge_video(
     videos: List[UploadFile] = File(..., description="List of video files to merge"),
     audio: UploadFile = File(..., description="Audio file to add to the merged video"),
@@ -69,8 +74,14 @@ async def merge_video(
         error_message = " | ".join(formatted_errors)
 
         # Return the formatted error message in a user-friendly way
-        raise HTTPException(status_code=400, detail=error_message) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        ) from e
 
     except Exception as e:
         # Catch any other unexpected errors
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e!s}") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {e!s}",
+        ) from e
