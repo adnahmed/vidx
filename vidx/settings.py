@@ -47,12 +47,12 @@ class Settings(BaseSettings):
     db_base: str = "admin"
     db_echo: bool = False
 
-    # Variables for Redis
-    redis_host: str = "vidx-redis"
-    redis_port: int = 6379
-    redis_user: Optional[str] = None
-    redis_pass: Optional[str] = None
-    redis_base: Optional[int] = None
+    # Variables for RabbitMQ
+    rabbitmq_host: str = "rabbitmq"
+    rabbitmq_port: int = 5672
+    rabbitmq_user: Optional[str] = "vidx"
+    rabbitmq_pass: Optional[str] = "vidx"
+    rabbitmq_base: Optional[int] = None
 
     @property
     def db_url(self) -> URL:
@@ -71,21 +71,21 @@ class Settings(BaseSettings):
         )
 
     @property
-    def redis_url(self) -> URL:
+    def rabbitmq_url(self) -> URL:
         """
-        Assemble REDIS URL from settings.
+        Assemble RabbitMQ URL from settings.
 
-        :return: redis URL.
+        :return: rabbitmq URL.
         """
         path = ""
-        if self.redis_base is not None:
-            path = f"/{self.redis_base}"
+        if self.rabbitmq_base is not None:
+            path = f"/{self.rabbitmq_base}"
         return URL.build(
-            scheme="redis",
-            host=self.redis_host,
-            port=self.redis_port,
-            user=self.redis_user,
-            password=self.redis_pass,
+            scheme="amqp",
+            host=self.rabbitmq_host,
+            port=self.rabbitmq_port,
+            user=self.rabbitmq_user,
+            password=self.rabbitmq_pass,
             path=path,
         )
 

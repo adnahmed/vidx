@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from vidx.db.models import load_all_models
-from vidx.services.redis.lifespan import init_redis, shutdown_redis
 from vidx.settings import settings
 
 
@@ -35,8 +34,6 @@ async def lifespan_setup(
 
     app.middleware_stack = None
     await _setup_db(app)
-    init_redis(app)
     app.middleware_stack = app.build_middleware_stack()
 
     yield
-    await shutdown_redis(app)

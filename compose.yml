@@ -25,5 +25,18 @@ services:
       ME_CONFIG_MONGODB_URL: mongodb://vidx:vidx@mongo:27017/
       ME_CONFIG_BASICAUTH: false
 
+  rabbitmq:
+    image: rabbitmq:latest
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: vidx
+      RABBITMQ_DEFAULT_PASS: vidx
+    volumes:
+      - db-rabbitmq:/var/lib/rabbitmq
+
 volumes:
   db-data:
+  db-rabbitmq:
