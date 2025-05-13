@@ -26,7 +26,7 @@ services:
       ME_CONFIG_BASICAUTH: false
 
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:3-management
     restart: always
     ports:
       - 5672:5672
@@ -35,8 +35,10 @@ services:
       RABBITMQ_DEFAULT_USER: vidx
       RABBITMQ_DEFAULT_PASS: vidx
     volumes:
-      - db-rabbitmq:/var/lib/rabbitmq
+      - config-rabbitmq:/var/lib/rabbitmq
+      - db-rabbitmq:/data
 
 volumes:
   db-data:
   db-rabbitmq:
+  config-rabbitmq:

@@ -48,11 +48,14 @@ class Settings(BaseSettings):
     db_echo: bool = False
 
     # Variables for RabbitMQ
-    rabbitmq_host: str = "rabbitmq"
+    rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
     rabbitmq_user: Optional[str] = "vidx"
     rabbitmq_pass: Optional[str] = "vidx"
     rabbitmq_base: Optional[int] = None
+    rabbitmq_queue_name: str = "vidx_processing"
+    rabbitmq_exchange_name: str = "vidx_exchange"
+    rabbitmq_routing_key: str = "vidx.process"
 
     @property
     def db_url(self) -> URL:
@@ -80,6 +83,7 @@ class Settings(BaseSettings):
         path = ""
         if self.rabbitmq_base is not None:
             path = f"/{self.rabbitmq_base}"
+
         return URL.build(
             scheme="amqp",
             host=self.rabbitmq_host,

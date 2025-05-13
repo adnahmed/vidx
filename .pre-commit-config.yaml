@@ -17,7 +17,7 @@ repos:
             language: system
             pass_filenames: false
             always_run: true
-            args: ["check", "vidx", "tests", "--fix"]
+            args: ["check", "vidx", "tests", "--config=pyproject.toml", "--fix"]
 
           - id: mypy
             name: Validate types with MyPy

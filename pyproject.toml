@@ -25,7 +25,7 @@ python-multipart = "^0.0.20"
 python-magic = "^0.4.27"
 ffmpeg-python = "^0.2.0"
 pydantic-async-validation = "^0.3.0"
-static-ffmpeg = "^2.13"
+celery = "^5.5.2"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -56,14 +56,6 @@ allow_untyped_decorators = true
 warn_unused_ignores = false
 warn_return_any = false
 namespace_packages = true
-
-# Remove this and add `types-redis`
-# when the issue https://github.com/python/typeshed/issues/8242 is resolved.
-[[tool.mypy.overrides]]
-module = [
-    'redis.asyncio'
-]
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 filterwarnings = [
@@ -107,7 +99,11 @@ lint.select = [
     "RUF", # Specific to Ruff checks
 ]
 lint.ignore = [
+    "D",       # Docstring rules
+    "D101",    # Missing docstring in public module
+    "D102",    # Missing docstring in public method
     "D105",    # Missing docstring in magic method
+    "D205",    # Whitespace before : in multi-line docstring
     "D107",    # Missing docstring in __init__
     "B008",    # Do not perform function calls in argument defaults
     "D211",    # No blank lines allowed before class docstring
@@ -116,6 +112,14 @@ lint.ignore = [
     "D104",    # Missing docstring in public package
     "D100",    # Missing docstring in public module
     "D202",    # No blank lines allowed after function docstring
+    "E501",    # Line too long
+    "PTH105",  # Pathlib checks 
+    "PTH120",  # Pathlib checks
+    "PLR0915", # Too many statements in function
+    "PLR0912", # Too many branches in function
+    "C901",    # Too many lines in module
+    "S603",    # `subprocess` call checks for execution of untrusted input
+    "S108",    # Portable insecure usage of temporary file
     "ANN102",  # Missing type annotation for self in method
     "ANN101",  # Missing type annotation for argument
     "ANN401",  # typing.Any are disallowed in `**kwargs
@@ -169,3 +173,6 @@ jwt_auth = "None"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+start-celery = "run_celery_worker:main"
