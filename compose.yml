@@ -34,8 +34,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
       VIDX_HOST: 0.0.0.0
       VIDX_DB_HOST: vidx-db
