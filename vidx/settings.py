@@ -1,4 +1,5 @@
 import enum
+import os
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Optional
@@ -40,19 +41,19 @@ class Settings(BaseSettings):
 
     log_level: LogLevel = LogLevel.INFO
     # Variables for the database
-    db_host: str = "localhost"
-    db_port: int = 27017
-    db_user: str = "vidx"
-    db_pass: str = "vidx"
-    db_base: str = "admin"
+    db_host: str = os.environ.get("VIDX_DB_HOST") or "localhost"
+    db_port: int = int(os.environ.get("VIDX_DB_PORT") or 27017)
+    db_user: str = os.environ.get("VIDX_DB_USER") or "vidx"
+    db_pass: str = os.environ.get("VIDX_DB_PASS") or "vidx"
+    db_base: str = os.environ.get("VIDX_DB_BASE") or "admin"
     db_echo: bool = False
 
     # Variables for RabbitMQ
-    rabbitmq_host: str = "localhost"
-    rabbitmq_port: int = 5672
-    rabbitmq_user: Optional[str] = "vidx"
-    rabbitmq_pass: Optional[str] = "vidx"
-    rabbitmq_base: Optional[int] = None
+    rabbitmq_host: str = os.environ.get("RABBITMQ_HOST") or "localhost"
+    rabbitmq_port: int = int(os.environ.get("RABBITMQ_PORT") or 5672)
+    rabbitmq_user: Optional[str] = os.environ.get("RABBITMQ_USER") or "vidx"
+    rabbitmq_pass: Optional[str] = os.environ.get("RABBITMQ_PASS") or "vidx"
+    rabbitmq_base: Optional[str] = os.environ.get("RABBITMQ_BASE") or "/"
     rabbitmq_queue_name: str = "vidx_processing"
     rabbitmq_exchange_name: str = "vidx_exchange"
     rabbitmq_routing_key: str = "vidx.process"
