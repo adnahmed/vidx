@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
 
-# Set versions and directories
-FFMPEG_VERSION="4.4"
-NASM_VERSION="2.15.05"
-YASM_VERSION="1.3.0"
-FFMPEG_DIR="$HOME/ffmpeg"
-GLTRANSITION_DIR="$HOME/ffmpeg-gl-transition"
-BUILD_DIR="$HOME/ffmpeg_build"
-SRC_DIR="$HOME/ffmpeg_sources"
+# Set versions and directories - Use ENV vars if available, else defaults
+FFMPEG_VERSION=4.4
+NASM_VERSION=2.15.05
+YASM_VERSION=1.3.0
+FFMPEG_DIR="${FFMPEG_DIR:-$HOME/ffmpeg}"
+GLTRANSITION_DIR="${GLTRANSITION_DIR:-$HOME/ffmpeg-gl-transition}"
+BUILD_DIR="${BUILD_DIR:-$HOME/ffmpeg_build}"
+SRC_DIR="${SRC_DIR:-$HOME/ffmpeg_sources}"
 NUM_CORES=$(nproc)
 
 mkdir -p "$SRC_DIR"
