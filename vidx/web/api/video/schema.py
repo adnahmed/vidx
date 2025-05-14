@@ -1,5 +1,4 @@
 import asyncio
-import os
 import tempfile
 from enum import Enum
 from pathlib import Path
@@ -11,6 +10,8 @@ from celery import states
 from fastapi import HTTPException
 from pydantic import BaseModel, field_validator
 from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
+
+from vidx.settings import settings
 
 
 class Transition(Enum):
@@ -140,7 +141,7 @@ async def get_video_duration(file_path: str) -> float:
         probe = await asyncio.to_thread(
             ffmpeg.probe,
             file_path,
-            cmd=os.environ["FFPROBE_BINARY"],
+            cmd=settings.ffmpeg,
             v="error",
             select_streams="v:0",
             show_entries="stream=duration",
@@ -171,7 +172,7 @@ async def get_video_info(file_path: str) -> Tuple[str, Tuple[int, int]]:
         probe = await asyncio.to_thread(
             ffmpeg.probe,
             file_path,
-            cmd=os.environ["FFPROBE_BINARY"],
+            cmd=settings.ffprobe,
             v="error",
             select_streams="v:0",
             show_entries="stream=width,height",
@@ -206,7 +207,7 @@ async def get_audio_duration(file_path: str) -> float:
         probe = await asyncio.to_thread(
             ffmpeg.probe,
             file_path,
-            cmd=os.environ["FFPROBE_BINARY"],
+            cmd=settings.ffprobe,
             v="error",
             select_streams="a:0",
             show_entries="stream=duration",
@@ -243,7 +244,7 @@ async def crop_audio_stream(input_path: str, duration: float) -> None:
                     ffmpeg.input(input_path)
                     .output(str(tmp_path), t=duration)
                     .overwrite_output()
-                    .run(cmd=os.environ["FFMPEG_BINARY"])
+                    .run(cmd=settings.ffmpeg)
                 ),
             )
             tmp_path.replace(input_path)

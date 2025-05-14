@@ -1,4 +1,3 @@
-import os
 from importlib import metadata
 
 from fastapi import FastAPI
@@ -6,9 +5,6 @@ from fastapi.responses import UJSONResponse
 
 from vidx.web.api.router import api_router
 from vidx.web.lifespan import lifespan_setup
-
-os.environ["FFPROBE_BINARY"] = f"{os.environ["HOME"]}/ffmpeg/ffprobe"
-os.environ["FFMPEG_BINARY"] = f"{os.environ["HOME"]}/ffmpeg/ffmpeg"
 
 
 def get_app() -> FastAPI:

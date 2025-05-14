@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Current environment
     environment: str = "dev"
 
+    # ffmpeg binaries
+    ffmpeg = os.environ["FFPROBE_BINARY"] or f"{os.environ["HOME"]}/ffmpeg/ffmpeg"
+    ffprobe = os.environ["FFPROBE_BINARY"] or f"{os.environ["HOME"]}/ffmpeg/ffprobe"
+
     log_level: LogLevel = LogLevel.INFO
     # Variables for the database
     db_host: str = os.environ.get("VIDX_DB_HOST") or "localhost"
