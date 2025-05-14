@@ -117,13 +117,13 @@ make install
 }
 
 # clone gl_transitions into the FFMPEG directory and move all the files into FFMPEG directory
-if [ ! -d "$FFMPEG_DIR/gl-transitions" ]; then
-  git clone https://github.com/gl-transitions/gl-transitions "$FFMPEG_DIR/gl-transitions"
-  mv "$FFMPEG_DIR/gl-transitions/transitions/"* "$FFMPEG_DIR/"
-  mv "$FFMPEG_DIR/dissolve.glsl" "$FFMPEG_DIR/dissolve.glsl.bak"
-  mv "$FFMPEG_DIR/dissolve.glsl.bak/dissolve.glsl" "$FFMPEG_DIR/dissolve.glsl"
-  rm -rf "$FFMPEG_DIR/gl-transitions"
-  rm -rf "$FFMPEG_DIR/dissolve.glsl.bak"
+if [ ! -d "$BUILD_DIR/bin/gl-transitions" ]; then
+  git clone https://github.com/gl-transitions/gl-transitions "$BUILD_DIR/bin/gl-transitions"
+  mv "$BUILD_DIR/bin/gl-transitions/transitions/"* "$BUILD_DIR/bin"
+  mv "$BUILD_DIR/bin/dissolve.glsl" "$BUILD_DIR/bin/dissolve.glsl.bak"
+  mv "$BUILD_DIR/bin/dissolve.glsl.bak/dissolve.glsl" "$BUILD_DIR/bin/dissolve.glsl"
+  rm -rf "$BUILD_DIR/bin/gl-transitions"
+  rm -rf "$BUILD_DIR/bin/dissolve.glsl.bak"
 fi
 
 echo "✅ FFmpeg 4.4 with gltransition built successfully at $BUILD_DIR/bin/ffmpeg"
