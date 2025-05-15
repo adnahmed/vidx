@@ -60,6 +60,7 @@ services:
 
   celery:
     <<: *main_app # inherit all the settings from the main app
+    ports: [] # Override ports with empty array to prevent port binding
     command: poetry run start-celery
     depends_on:
       - api
