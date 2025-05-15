@@ -10,7 +10,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NASM_VERSION=2.15.05 \
     YASM_VERSION=1.3.0 \
     FFMPEG_VERSION=4.4 \
-    NUM_CORES=$(nproc) \
     DISPLAY=:1
 
 # Install essential build deps (without NASM/YASM)
@@ -40,21 +39,21 @@ RUN curl -L -O https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/nasm-$NA
     tar xjf nasm-$NASM_VERSION.tar.bz2 && cd nasm-$NASM_VERSION && \
     ./autogen.sh && \
     ./configure --prefix="$BUILD_DIR" && \
-    make -j"$NUM_CORES" && \
+    make -j$(nproc) && \
     make install
 
 # Install YASM from source
 RUN curl -L -O https://www.tortall.net/projects/yasm/releases/yasm-$YASM_VERSION.tar.gz && \
     tar xzf yasm-$YASM_VERSION.tar.gz && cd yasm-$YASM_VERSION && \
     ./configure --prefix="$BUILD_DIR" && \
-    make -j"$NUM_CORES" && \
+    make -j$(nproc) && \
     make install
 
 # Build fdk-aac from source
 RUN git clone https://github.com/mstorsjo/fdk-aac.git $FDKAAC_DIR && \
     cd $FDKAAC_DIR && autoreconf -fiv && \
     ./configure --prefix="$BUILD_DIR" --disable-shared && \
-    make -j"$NUM_CORES" && make install
+    make -j$(nproc) && make install
 
 # Clone and patch gltransition filter code
 RUN git clone https://github.com/adnahmed/ffmpeg-gl-transition $GLTRANSITION_DIR
@@ -88,7 +87,7 @@ RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
     --extra-cflags="-I/usr/include/SOIL -I$BUILD_DIR/include" \
     --extra-ldflags="-L/usr/lib/x86_64-linux-gnu -L$BUILD_DIR/lib -lSOIL -lGL" \
     --extra-libs='-lGLEW -lEGL -lSOIL -lGL -lglfw' && \
-    make -j"$NUM_CORES" && make install && \
+    make -j$(nproc) && make install && \
     $BUILD_DIR/bin/ffmpeg -filters | grep gltransition
 
 # Copy all gl-transitions shaders
