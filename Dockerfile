@@ -10,7 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NASM_VERSION=2.15.05 \
     YASM_VERSION=1.3.0 \
     FFMPEG_VERSION=4.4 \
-    DISPLAY=:1
+    DISPLAY=:1 \
+    PATH="$BUILD_DIR/bin:$PATH"
 
 # Install essential build deps (without NASM/YASM)
 RUN apt-get update && \
