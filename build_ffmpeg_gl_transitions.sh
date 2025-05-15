@@ -14,8 +14,8 @@ NUM_CORES=$(nproc)
 mkdir -p "$SRC_DIR"
 
 # Update and install system dependencies
-sudo apt update
-sudo apt install -y \
+apt update
+apt install -y \
   autoconf automake build-essential cmake git libtool pkg-config curl \
   libx264-dev libx265-dev libnuma-dev libvpx-dev libfdk-aac-dev libmp3lame-dev \
   libopus-dev libvorbis-dev libtheora-dev libass-dev libfreetype6-dev libfribidi-dev \

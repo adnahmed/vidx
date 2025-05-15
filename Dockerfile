@@ -12,7 +12,7 @@ RUN /tmp/build_ffmpeg_gl_transitions.sh
 
 # --- Production Stage ---
 FROM python:3.11.4-slim-bullseye AS prod
-
+ENV BUILD_DIR=/opt/ffmpeg_build
 COPY --from=base $BUILD_DIR $BUILD_DIR
 RUN chmod +x $BUILD_DIR/bin/ffmpeg
 RUN chmod +x $BUILD_DIR/bin/ffprobe
