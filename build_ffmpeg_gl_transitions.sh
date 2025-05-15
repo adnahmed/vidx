@@ -15,6 +15,8 @@ mkdir -p "$SRC_DIR"
 
 # Update and install system dependencies
 apt update
+apt-get install -y software-properties-common 
+add-apt-repository universe 
 apt install -y \
   autoconf automake build-essential cmake git libtool pkg-config curl \
   libx264-dev libx265-dev libnuma-dev libvpx-dev libfdk-aac-dev libmp3lame-dev \
