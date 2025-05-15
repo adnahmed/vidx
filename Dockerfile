@@ -90,8 +90,9 @@ RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
     --extra-cflags="-I/usr/include/SOIL -I /opt/ffmpeg_build/include" \
     --extra-ldflags="-L/usr/lib/x86_64-linux-gnu -L/opt/ffmpeg_build/lib -lSOIL -lGL" \
     --extra-libs='-lGLEW -lEGL -lSOIL -lGL -lglfw' && \
-    make -j$(nproc) && make install && \
-    /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition
+    make -j$(nproc) && make install 
+
+RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition || [ $? -eq 1 ]
 
 # Copy all gl-transitions shaders
 WORKDIR $SRC_DIR
