@@ -40,8 +40,13 @@ class Settings(BaseSettings):
     environment: str = "dev"
 
     # ffmpeg binaries
-    ffmpeg = os.environ["FFPROBE_BINARY"] or f"{os.environ["HOME"]}/ffmpeg/ffmpeg"
-    ffprobe = os.environ["FFPROBE_BINARY"] or f"{os.environ["HOME"]}/ffmpeg/ffprobe"
+    ffmpeg: str = (
+        os.environ.get("FFMPEG_BINARY") or f"{os.environ.get('HOME', '')}/ffmpeg/ffmpeg"
+    )
+    ffprobe: str = (
+        os.environ.get("FFPROBE_BINARY")
+        or f"{os.environ.get('HOME', '')}/ffmpeg/ffprobe"
+    )
 
     log_level: LogLevel = LogLevel.INFO
     # Variables for the database
