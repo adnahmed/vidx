@@ -27,7 +27,7 @@ services:
       FFPROBE_BINARY: /opt/ffmpeg_build/bin/ffprobe
 
   db:
-    image: mongo:7.0
+    image: mongo:latest
     hostname: vidx-db
     restart: always
     environment:
@@ -37,10 +37,12 @@ services:
     volumes:
       - db-data:/data/db
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
       timeout: 5s
-      retries: 40
+      retries: 5
+      start_period: 30s
+
   rabbitmq:
     image: rabbitmq:3-management
     hostname: vidx-rabbitmq
