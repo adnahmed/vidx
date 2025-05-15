@@ -128,5 +128,7 @@ RUN poetry config virtualenvs.create false && \
 
 # Copy app source
 COPY . .
+# Install the package in development mode
+RUN pip install -e .
 
 CMD ["python", "-m", "vidx"]
