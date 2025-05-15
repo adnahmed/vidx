@@ -115,7 +115,7 @@ ENV BUILD_DIR=/opt/ffmpeg_build \
 COPY --from=builder /opt/ffmpeg_build /opt/ffmpeg_build
 
 # Install Poetry
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+RUN apt-get update && apt-get install -y --no-install-recommends curl libmagic1 && \
     curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry && rm -rf /var/lib/apt/lists/*
 
