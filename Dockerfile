@@ -1,5 +1,5 @@
 # --- Base Stage ---
-FROM python:3.11.4-slim-bullseye AS base
+FROM python:3.11.4 AS base
 
 ENV SRC_DIR=/opt/ffmpeg_sources
 ENV BUILD_DIR=/opt/ffmpeg_build
