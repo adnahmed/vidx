@@ -97,8 +97,10 @@ RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition || [ $? -eq 1 ]
 # Copy all gl-transitions shaders
 WORKDIR $SRC_DIR
 RUN git clone https://github.com/gl-transitions/gl-transitions.git && \
-    cp gl-transitions/transitions/*.glsl $BUILD_DIR/bin/ && \
-    cp gl-transitions/transitions/dissolve/dissolve.glsl $BUILD_DIR/bin/
+    cp -r gl-transitions/transitions/*.glsl $BUILD_DIR/bin/ && \
+    mv $BUILD_DIR/bin/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl.bak && \
+    mv $BUILD_DIR/bin/dissolve.glsl.bak/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl && \
+    rm -rf $BUILD_DIR/bin/dissolve.glsl.bak 
 
 # ─── Final Stage ────────────────────────────────────────────────────────────
 FROM python:3.11.4-slim-bullseye AS prod
