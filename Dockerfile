@@ -10,8 +10,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NASM_VERSION=2.15.05 \
     YASM_VERSION=1.3.0 \
     FFMPEG_VERSION=4.4 \
-    DISPLAY=:1 \
-    PATH="$BUILD_DIR/bin:$PATH"
+    DISPLAY=:1 
+
+# Ensure built tools are discoverable
+ENV PATH=/opt/ffmpeg_build/bin:$PATH
 
 # Install essential build deps (without NASM/YASM)
 RUN apt-get update && \
@@ -85,11 +87,11 @@ RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
     --enable-libfdk-aac \
     --enable-opengl \
     --enable-filter=gltransition \
-    --extra-cflags="-I/usr/include/SOIL -I$BUILD_DIR/include" \
-    --extra-ldflags="-L/usr/lib/x86_64-linux-gnu -L$BUILD_DIR/lib -lSOIL -lGL" \
+    --extra-cflags="-I/usr/include/SOIL -I /opt/ffmpeg_build/include" \
+    --extra-ldflags="-L/usr/lib/x86_64-linux-gnu -L/opt/ffmpeg_build/lib -lSOIL -lGL" \
     --extra-libs='-lGLEW -lEGL -lSOIL -lGL -lglfw' && \
     make -j$(nproc) && make install && \
-    $BUILD_DIR/bin/ffmpeg -filters | grep gltransition
+    /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition
 
 # Copy all gl-transitions shaders
 WORKDIR $SRC_DIR
