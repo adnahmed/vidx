@@ -23,6 +23,8 @@ services:
       RABBITMQ_USER: vidx
       RABBITMQ_PASS: vidx
       RABBITMQ_BASE: /
+      FFMPEG_BINARY: /opt/ffmpeg_build/bin/ffmpeg
+      FFPROBE_BINARY: /opt/ffmpeg_build/bin/ffprobe
 
   db:
     image: mongo:7.0
