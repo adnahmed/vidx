@@ -25,6 +25,8 @@ services:
       RABBITMQ_BASE: /
       FFMPEG_BINARY: /opt/ffmpeg_build/bin/ffmpeg
       FFPROBE_BINARY: /opt/ffmpeg_build/bin/ffprobe
+    volumes:
+      - tmp-store:/tmp
 
   db:
     image: mongo:latest
@@ -69,4 +71,5 @@ services:
 volumes:
   db-data:
   db-rabbitmq:
+  tmp-store:
   config-rabbitmq:
