@@ -1,0 +1,40 @@
+services:
+
+  db:
+    image: mongo:latest
+    hostname: vidx-db
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "vidx"
+      MONGO_INITDB_ROOT_PASSWORD: "vidx"
+    command: "mongod"
+    ports:
+      - 27017:27017
+    volumes:
+      - db-data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: vidx-rabbitmq
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: vidx
+      RABBITMQ_DEFAULT_PASS: vidx
+    volumes:
+      - config-rabbitmq:/var/lib/rabbitmq
+      - db-rabbitmq:/data
+
+volumes:
+  db-data:
+  db-rabbitmq:
+  config-rabbitmq:
