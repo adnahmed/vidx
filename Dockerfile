@@ -72,6 +72,7 @@ WORKDIR $FFMPEG_DIR
 
 # Start headless X for shader compilation
 RUN nohup Xvfb :1 -screen 0 1280x1024x16 >/dev/null 2>&1 &
+ENV DISPLAY=:1
 
 # Configure, build & install FFmpeg
 RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
@@ -120,7 +121,7 @@ COPY --from=builder /opt/ffmpeg_build /opt/ffmpeg_build
 
 # Install Poetry and FFmpeg runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl libmagic1 \
+    curl libmagic1 xvfb \
     libxcb1 \
     libxcb-shm0 \
     libxcb-shape0 \
@@ -153,6 +154,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && \
     curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry && rm -rf /var/lib/apt/lists/*
+
+RUN nohup Xvfb :1 -screen 0 3840x2160x24 >/dev/null 2>&1 &
+ENV DISPLAY=:1
 
 WORKDIR /app
 
