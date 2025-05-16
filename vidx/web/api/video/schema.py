@@ -141,7 +141,7 @@ async def get_video_duration(file_path: str) -> float:
         probe = await asyncio.to_thread(
             ffmpeg.probe,
             file_path,
-            cmd=settings.ffmpeg,
+            cmd=settings.ffprobe,
             v="error",
             select_streams="v:0",
             show_entries="stream=duration",
