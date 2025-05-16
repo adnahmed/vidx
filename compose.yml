@@ -8,6 +8,7 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    entrypoint: [ "docker-entrypoint.sh" ]
     depends_on:
       db:
         condition: service_healthy
@@ -63,6 +64,7 @@ services:
   celery:
     <<: *main_app # inherit all the settings from the main app
     ports: [] # Override ports with empty array to prevent port binding
+    entrypoint: [ "docker-entrypoint.sh" ]
     command: poetry run start-celery
     depends_on:
       - api

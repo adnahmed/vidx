@@ -155,9 +155,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry && rm -rf /var/lib/apt/lists/*
 
-RUN nohup Xvfb :1 -screen 0 3840x2160x24 >/dev/null 2>&1 &
-ENV DISPLAY=:1
-
 WORKDIR /app
 
 # Install Python deps
@@ -167,7 +164,9 @@ RUN poetry config virtualenvs.create false && \
 
 # Copy app source
 COPY . .
-# Install the package in development mode
-RUN pip install -e .
-
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    pip install -e .
+ENV DISPLAY=:1
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "-m", "vidx"]
