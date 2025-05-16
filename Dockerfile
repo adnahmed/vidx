@@ -114,8 +114,39 @@ ENV BUILD_DIR=/opt/ffmpeg_build \
 # Copy FFmpeg runtime
 COPY --from=builder /opt/ffmpeg_build /opt/ffmpeg_build
 
-# Install Poetry
-RUN apt-get update && apt-get install -y --no-install-recommends curl libmagic1 && \
+# Install Poetry and FFmpeg runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl libmagic1 \
+    libxcb1 \
+    libxcb-shm0 \
+    libxcb-shape0 \
+    libxcb-xfixes0 \
+    libasound2 \
+    libgl1 \
+    libsdl2-2.0-0 \
+    libxv1 \
+    libx11-6 \
+    libxext6 \
+    libass9 \
+    libva2 \
+    libfreetype6 \
+    libvpx6 \
+    libmp3lame0 \
+    libopus0 \
+    libtheora0 \
+    libvorbis0a \
+    libvorbisenc2 \
+    libx264-160 \
+    libx265-192 \
+    libxvidcore4 \
+    libva-drm2 \
+    libva-x11-2 \
+    libvdpau1 \
+    libglew2.1 \
+    libegl1 \
+    libglfw3 \
+    libsoil1 \
+    && \
     curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry && rm -rf /var/lib/apt/lists/*
 
