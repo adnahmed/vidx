@@ -166,6 +166,7 @@ def merge_videos(
         next_file = inputs[idx]
         next_duration = durations[idx]
         temp = f"/tmp/{uuid.uuid4().hex}.{ext}"
+        next_has_audio = video_audio_status[next_file]
 
         parts = [
             f"[0:v]trim=0:{current_duration - transition_duration},setpts=PTS-STARTPTS[vA_main];",
@@ -175,7 +176,13 @@ def merge_videos(
             f"[vA_tail][vB_head]gltransition=duration={transition_duration}:source={transition_path}[v_trans];",
         ]
 
-        if process_audio:
+        # For subsequent merges, assume merged file has audio if we were processing audio before
+        merged_has_audio = process_audio
+
+        # Only include audio processing if both the merged file and next file have audio
+        include_audio = process_audio and merged_has_audio and next_has_audio
+
+        if include_audio:
             parts += [
                 f"[0:a]atrim=0:{current_duration - transition_duration},asetpts=PTS-STARTPTS[aA_main];",
                 f"[0:a]atrim={current_duration - transition_duration}:{current_duration},asetpts=PTS-STARTPTS[aA_tail];",
@@ -200,11 +207,13 @@ def merge_videos(
             "-map",
             "[vout]",
         ]
-        if audio is None:
+
+        # Only map audio if it was included in the filter complex
+        if include_audio:
             cmd += ["-map", "[aout]"]
-        cmd += ["-c:v", vcodec]
-        cmd += ["-c:a", acodec if audio is None else "copy"]
-        cmd += ["-y", temp]
+            cmd += ["-c:a", acodec]
+
+        cmd += ["-c:v", vcodec, "-y", temp]
 
         result = subprocess_run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
