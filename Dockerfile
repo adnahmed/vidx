@@ -62,6 +62,10 @@ RUN git clone https://github.com/mstorsjo/fdk-aac.git $FDKAAC_DIR && \
 RUN git clone https://github.com/adnahmed/ffmpeg-gl-transition $GLTRANSITION_DIR
 RUN git clone --branch release/$FFMPEG_VERSION --depth 1 https://git.ffmpeg.org/ffmpeg.git $FFMPEG_DIR
 RUN cp $GLTRANSITION_DIR/vf_gltransition.c $FFMPEG_DIR/libavfilter/ && \
+    cd $FFMPEG_DIR && \
+    if [ -f "$GLTRANSITION_DIR/ffmpeg.diff" ]; then \
+    git apply "$GLTRANSITION_DIR/ffmpeg.diff" || echo "Manual patching"; \
+    fi && \
     sed -i '/^# define GL_TRANSITION_USING_EGL/d' $FFMPEG_DIR/libavfilter/vf_gltransition.c
 
 WORKDIR $FFMPEG_DIR
@@ -92,7 +96,7 @@ RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
     --extra-libs='-lGLEW -lEGL -lSOIL -lGL -lglfw' && \
     make -j$(nproc) && make install 
 
-RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition || [ $? -eq 1 ]
+RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition
 
 # Copy all gl-transitions shaders
 WORKDIR $SRC_DIR
