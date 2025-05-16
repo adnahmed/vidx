@@ -48,6 +48,19 @@ def merge_videos(
     # Determine output codec and extension based on mime
     vcodec, acodec, ext = mime_to_codecs(video_mime)
 
+    # Check if videos have audio streams
+    def has_audio_stream(file_path: str) -> bool:
+        cmd = [ffmpeg_bin, "-i", file_path]
+        result = subprocess_run(cmd, capture_output=True, text=True, check=False)
+        return "Stream #0:1" in result.stderr and "Audio:" in result.stderr
+
+    # Check each input video for audio track
+    video_audio_status = {
+        input_file: has_audio_stream(input_file) for input_file in inputs
+    }
+    # Only process audio if there's no external audio and at least one video has audio
+    process_audio = audio is None and any(video_audio_status.values())
+
     width, height = video_resolution
     # Unique merge file name
     merge_file = f"/tmp/{uuid.uuid4().hex}.{ext}"
@@ -85,8 +98,13 @@ def merge_videos(
         # transition
         f"[v0_tail][v1_head]gltransition=duration={transition_duration}:source={transition_path}[v_trans];",
     ]
-    # audio trims
-    if audio is None:
+
+    # audio trims - only if both videos have audio streams and no external audio
+    first_has_audio = video_audio_status[inputs[0]]
+    second_has_audio = video_audio_status[inputs[1]]
+
+    if process_audio and first_has_audio and second_has_audio:
+        # Both videos have audio - standard processing
         filter_parts += [
             f"[0:a]atrim=0:{d0 - transition_duration},asetpts=PTS-STARTPTS[a0_main];",
             f"[0:a]atrim={d0 - transition_duration}:{d0},asetpts=PTS-STARTPTS[a0_tail];",
@@ -96,7 +114,24 @@ def merge_videos(
             "[v0_main][v_trans][v1_rest]concat=n=3:v=1:a=0[vout];",
             "[a0_main][a_trans][a1_rest]concat=n=3:v=0:a=1[aout]",
         ]
+    elif process_audio and first_has_audio:
+        # Only first video has audio
+        filter_parts += [
+            f"[0:a]atrim=0:{d0 - transition_duration},asetpts=PTS-STARTPTS[a0_main];",
+            f"[0:a]atrim={d0 - transition_duration}:{d0},asetpts=PTS-STARTPTS[a0_tail];",
+            "[v0_main][v_trans][v1_rest]concat=n=3:v=1:a=0[vout];",
+            "[a0_main][a0_tail]concat=n=2:v=0:a=1[aout]",
+        ]
+    elif process_audio and second_has_audio:
+        # Only second video has audio
+        filter_parts += [
+            f"[1:a]atrim=0:{transition_duration},asetpts=PTS-STARTPTS[a1_head];",
+            f"[1:a]atrim={transition_duration}:{d1},asetpts=PTS-STARTPTS[a1_rest];",
+            "[v0_main][v_trans][v1_rest]concat=n=3:v=1:a=0[vout];",
+            "[a1_head][a1_rest]concat=n=2:v=0:a=1[aout]",
+        ]
     else:
+        # No audio or external audio will be added later
         filter_parts.append("[v0_main][v_trans][v1_rest]concat=n=3:v=1:a=0[vout]")
 
     filter_complex = " ".join(filter_parts)
@@ -111,11 +146,13 @@ def merge_videos(
         "-map",
         "[vout]",
     ]
-    if audio is None:
+
+    # Only map audio if we're processing it and at least one video has audio
+    if process_audio and (first_has_audio or second_has_audio):
         cmd += ["-map", "[aout]"]
-    cmd += ["-c:v", vcodec]
-    cmd += ["-c:a", acodec if audio is None else "copy"]
-    cmd += ["-y", merge_file]
+        cmd += ["-c:a", acodec]
+
+    cmd += ["-c:v", vcodec, "-y", merge_file]
 
     result = subprocess_run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
@@ -137,7 +174,8 @@ def merge_videos(
             f"[1:v]trim={transition_duration}:{next_duration},setpts=PTS-STARTPTS[vB_rest];",
             f"[vA_tail][vB_head]gltransition=duration={transition_duration}:source={transition_path}[v_trans];",
         ]
-        if audio is None:
+
+        if process_audio:
             parts += [
                 f"[0:a]atrim=0:{current_duration - transition_duration},asetpts=PTS-STARTPTS[aA_main];",
                 f"[0:a]atrim={current_duration - transition_duration}:{current_duration},asetpts=PTS-STARTPTS[aA_tail];",
