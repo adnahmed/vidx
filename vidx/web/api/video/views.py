@@ -1,8 +1,9 @@
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
+import httpx
 from celery import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -20,14 +21,39 @@ from vidx.web.api.video.schema import (
 )
 
 
-def save_upload_file_to_temp(upload_file: UploadFile, suffix: str = "") -> str:
-    """Save UploadFile to a real file and return the path."""
-    filename = upload_file.filename or str(uuid.uuid4())
-    file_path = Path(filename)
-    extension = file_path.suffix or suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
-        shutil.copyfileobj(upload_file.file, tmp)
-        return tmp.name
+async def save_upload_file_to_temp(
+    upload_file: Union[UploadFile, str],
+    suffix: str = "",
+) -> str:
+    """Save UploadFile or fetch from URL to a real file and return the path."""
+    if isinstance(upload_file, str):
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(upload_file)
+                response.raise_for_status()
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Could not fetch file from URL: {upload_file}. Error: {e!s}",
+                ) from e
+
+        parsed_url = httpx.URL(upload_file)
+        filename_from_url = Path(parsed_url.path).name
+        if not filename_from_url:
+            filename_from_url = str(uuid.uuid4())
+
+        file_path = Path(filename_from_url)
+        extension = file_path.suffix or suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+            tmp.write(response.content)
+            return tmp.name
+    else:
+        filename = upload_file.filename or str(uuid.uuid4())
+        file_path = Path(filename)
+        extension = file_path.suffix or suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+            shutil.copyfileobj(upload_file.file, tmp)
+            return tmp.name
 
 
 router = APIRouter()
@@ -48,7 +74,6 @@ async def get_merged_video(
     """
     try:
         task = worker.get_task_result(task_id)
-        # check if file exists
         if not task.result or not Path(task.result).exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -96,18 +121,21 @@ async def get_merge_status(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def merge_video(
-    videos: List[UploadFile] = File(..., description="List of video files to merge"),
-    audio: UploadFile = File(
+    videos: List[Union[UploadFile, str]] = File(
+        ...,
+        description="List of video files (UploadFile or URL string) to merge",
+    ),
+    audio: Union[UploadFile, str] = File(
         default=None,
-        description="Audio file to add to the merged video",
+        description="Audio file (UploadFile or URL string) to add to the merged video",
     ),
     transition: str = File(..., description="Transition to use between videos"),
 ) -> VideoMergeOutputDto:
     """
     Merges video files with audio using the specified transition.
 
-    :param videos: A list of video files to merge.
-    :param audio: An audio file to add to the merged video.
+    :param videos: A list of video files (or URLs) to merge.
+    :param audio: An audio file (or URL) to add to the merged video.
     :param transition: The transition to use between videos
                     (must be one of available_transitions).
     :returns: The merged video file.
@@ -115,9 +143,8 @@ async def merge_video(
     saved_audio_path = None
     saved_video_paths = []
     try:
-        # Save all uploaded files to disk first
-        saved_video_paths = [save_upload_file_to_temp(video) for video in videos]
-        saved_audio_path = save_upload_file_to_temp(audio) if audio else None
+        saved_video_paths = [await save_upload_file_to_temp(video) for video in videos]
+        saved_audio_path = await save_upload_file_to_temp(audio) if audio else None
         dto = VideoMergeInputDto(
             videos=saved_video_paths,
             audio=saved_audio_path,
@@ -148,7 +175,8 @@ async def merge_video(
         error_details = e.errors()
         formatted_errors = []
         for err in error_details:
-            formatted_errors.append(f"Field '{err['loc'][0]}' error: {err['msg']}")
+            field_name = err["loc"][0] if err["loc"] else "unknown_field"
+            formatted_errors.append(f"Field '{field_name}' error: {err['msg']}")
         error_message = " | ".join(formatted_errors)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -156,6 +184,13 @@ async def merge_video(
         ) from e
 
     except Exception as e:
+        if saved_audio_path and Path(saved_audio_path).exists():
+            Path(saved_audio_path).unlink()
+        for video_path in saved_video_paths:
+            if Path(video_path).exists():
+                Path(video_path).unlink()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error: {e!s}",
