@@ -262,10 +262,8 @@ def get_mime_type(file_path: str) -> str:
     Returns:
         str: MIME type of the file.
     """
-    path = Path(file_path)
-    with path.open("rb") as f:
-        magic_instance = magic.Magic(mime=True)
-        return magic_instance.from_buffer(f.read(1024))
+    magic_instance = magic.Magic(mime=True)
+    return magic_instance.from_file(file_path)
 
 
 class ValidationErrorCodes(str, Enum):
