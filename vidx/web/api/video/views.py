@@ -1,10 +1,10 @@
 import shutil
 import tempfile
+import uuid as std_uuid
 from pathlib import Path
 from typing import List, Union
 
 import httpx
-from celery import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
@@ -40,7 +40,7 @@ async def save_upload_file_to_temp(
         parsed_url = httpx.URL(upload_file)
         filename_from_url = Path(parsed_url.path).name
         if not filename_from_url:
-            filename_from_url = str(uuid.uuid4())
+            filename_from_url = str(std_uuid.uuid4())
 
         file_path = Path(filename_from_url)
         extension = file_path.suffix or suffix
@@ -48,7 +48,7 @@ async def save_upload_file_to_temp(
             tmp.write(response.content)
             return tmp.name
     else:
-        filename = upload_file.filename or str(uuid.uuid4())
+        filename = upload_file.filename or str(std_uuid.uuid4())
         file_path = Path(filename)
         extension = file_path.suffix or suffix
         with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
