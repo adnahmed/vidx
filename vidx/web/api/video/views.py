@@ -1,8 +1,9 @@
+import mimetypes
 import shutil
 import tempfile
 import uuid as std_uuid
 from pathlib import Path
-from typing import List, Union
+from typing import IO, List, Union
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -26,11 +27,15 @@ async def save_upload_file_to_temp(
     suffix: str = "",
 ) -> str:
     """Save UploadFile or fetch from URL to a real file and return the path."""
+    original_filename: str
+    file_content_to_write: Union[bytes, IO[bytes]]
+
     if isinstance(upload_file, str):
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(upload_file)
                 response.raise_for_status()
+                file_content_to_write = response.content
             except httpx.RequestError as e:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -39,21 +44,64 @@ async def save_upload_file_to_temp(
 
         parsed_url = httpx.URL(upload_file)
         filename_from_url = Path(parsed_url.path).name
-        if not filename_from_url:
-            filename_from_url = str(std_uuid.uuid4())
-
-        file_path = Path(filename_from_url)
-        extension = file_path.suffix or suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
-            tmp.write(response.content)
-            return tmp.name
+        original_filename = filename_from_url or str(std_uuid.uuid4())
     else:
-        filename = upload_file.filename or str(std_uuid.uuid4())
-        file_path = Path(filename)
-        extension = file_path.suffix or suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
-            shutil.copyfileobj(upload_file.file, tmp)
-            return tmp.name
+        original_filename = upload_file.filename or str(std_uuid.uuid4())
+        file_content_to_write = upload_file.file
+        await upload_file.seek(0)
+
+    path_obj = Path(original_filename)
+    determined_suffix = path_obj.suffix
+
+    if not determined_suffix:
+        temp_for_mime_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_for_mime:
+                temp_for_mime_path = tmp_for_mime.name
+                if isinstance(file_content_to_write, bytes):
+                    tmp_for_mime.write(file_content_to_write)
+                elif isinstance(upload_file, UploadFile):
+                    await upload_file.seek(0)
+                    shutil.copyfileobj(upload_file.file, tmp_for_mime)
+                    await upload_file.seek(0)
+                else:
+                    shutil.copyfileobj(file_content_to_write, tmp_for_mime)
+                tmp_for_mime.flush()
+            if temp_for_mime_path:
+                mime_type = get_mime_type(temp_for_mime_path)
+                guessed_extension = mimetypes.guess_extension(mime_type)
+                if guessed_extension:
+                    determined_suffix = guessed_extension
+        except Exception as e:
+            raise e
+        finally:
+            if temp_for_mime_path and Path(temp_for_mime_path).exists():
+                Path(temp_for_mime_path).unlink()
+
+    if not determined_suffix:
+        determined_suffix = suffix
+
+    if determined_suffix and not determined_suffix.startswith("."):
+        determined_suffix = "." + determined_suffix
+
+    final_stem = path_obj.stem
+    if (
+        original_filename == str(std_uuid.uuid4())
+        and not path_obj.suffix
+        and determined_suffix
+    ):
+        final_stem = str(std_uuid.uuid4())
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        prefix=final_stem + "_",
+        suffix=determined_suffix,
+    ) as tmp_final:
+        if isinstance(file_content_to_write, bytes):
+            tmp_final.write(file_content_to_write)
+        else:
+            shutil.copyfileobj(file_content_to_write, tmp_final)
+        return tmp_final.name
 
 
 router = APIRouter()
