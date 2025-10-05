@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -13,6 +14,15 @@ from pydantic_async_validation import AsyncValidationModelMixin, async_field_val
 
 from vidx.settings import settings
 
+
+
+
+class MergeHistoryItem(BaseModel):
+    task_id: str
+    created_at: datetime
+    videos: list[str]
+    audio: str | None = None
+    transition: str
 
 class Transition(Enum):
     """Enum for video transitions."""

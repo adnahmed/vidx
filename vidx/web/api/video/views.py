@@ -1,3 +1,4 @@
+
 import mimetypes
 import shutil
 import tempfile
@@ -6,20 +7,33 @@ from pathlib import Path
 from typing import IO, List, Union
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from starlette import status
 
+from vidx.db.dao.merge_history_dao import MergeHistoryDAO
 from vidx.services.celery.tasks import merge_videos
 from vidx.services.celery.worker import CeleryWorker
 from vidx.web.api.video.schema import (
+    MergeHistoryItem,
     Transition,
     VideoMergeInputDto,
     VideoMergeOutputDto,
     VideoStatus,
     get_mime_type,
 )
+
+
+def _resolve_submitted_name(upload: Union[UploadFile, str]) -> str:
+    if isinstance(upload, UploadFile):
+        return upload.filename or "uploaded-file"
+    try:
+        parsed = httpx.URL(upload)
+    except httpx.InvalidURL:
+        return upload
+    name = Path(parsed.path).name
+    return name or upload
 
 
 async def save_upload_file_to_temp(
@@ -81,8 +95,8 @@ async def save_upload_file_to_temp(
     if not determined_suffix:
         determined_suffix = suffix
 
-    if determined_suffix and not determined_suffix.startswith("."):
-        determined_suffix = "." + determined_suffix
+    if determined_suffix and not determined_suffix.startswith('.'):
+        determined_suffix = '.' + determined_suffix
 
     final_stem = path_obj.stem
     if (
@@ -94,7 +108,7 @@ async def save_upload_file_to_temp(
 
     with tempfile.NamedTemporaryFile(
         delete=False,
-        prefix=final_stem + "_",
+        prefix=final_stem + '_',
         suffix=determined_suffix,
     ) as tmp_final:
         if isinstance(file_content_to_write, bytes):
@@ -105,6 +119,10 @@ async def save_upload_file_to_temp(
 
 
 router = APIRouter()
+
+
+def get_merge_history_dao() -> MergeHistoryDAO:
+    return MergeHistoryDAO()
 
 
 @router.get("/merge", response_class=FileResponse)
@@ -169,6 +187,7 @@ async def get_merge_status(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def merge_video(
+    request: Request,
     videos: List[Union[UploadFile, str]] = File(
         ...,
         description="List of video files (UploadFile or URL string) to merge",
@@ -178,6 +197,7 @@ async def merge_video(
         description="Audio file (UploadFile or URL string) to add to the merged video",
     ),
     transition: str = File(..., description="Transition to use between videos"),
+    history_dao: MergeHistoryDAO = Depends(get_merge_history_dao),
 ) -> VideoMergeOutputDto:
     """
     Merges video files with audio using the specified transition.
@@ -189,7 +209,14 @@ async def merge_video(
     :returns: The merged video file.
     """
     saved_audio_path = None
-    saved_video_paths = []
+    saved_video_paths: List[str] = []
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    submitted_video_names = [_resolve_submitted_name(video) for video in videos]
+    submitted_audio_name = _resolve_submitted_name(audio) if audio else None
+
     try:
         saved_video_paths = [await save_upload_file_to_temp(video) for video in videos]
         saved_audio_path = await save_upload_file_to_temp(audio) if audio else None
@@ -208,6 +235,15 @@ async def merge_video(
             dto.audio_duration,
             Transition[dto.transition].value,
         )
+
+        await history_dao.create_history(
+            user_id=user.id,
+            task_id=task.id,
+            videos=submitted_video_names,
+            audio=submitted_audio_name,
+            transition=dto.transition,
+        )
+
         return VideoMergeOutputDto(
             task_id=task.id,
             status=task.status,
@@ -243,3 +279,35 @@ async def merge_video(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error: {e!s}",
         ) from e
+
+
+@router.get(
+    "/history",
+    response_model=List[MergeHistoryItem],
+    status_code=status.HTTP_200_OK,
+)
+async def get_merge_history(
+    request: Request,
+    history_dao: MergeHistoryDAO = Depends(get_merge_history_dao),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> List[MergeHistoryItem]:
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    entries = await history_dao.list_for_user(
+        user_id=user.id,
+        limit=limit,
+        offset=offset,
+    )
+    return [
+        MergeHistoryItem(
+            task_id=entry.task_id,
+            created_at=entry.created_at,
+            videos=entry.videos,
+            audio=entry.audio,
+            transition=entry.transition,
+        )
+        for entry in entries
+    ]

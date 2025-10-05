@@ -15,6 +15,9 @@ class UserDAO:
     async def get_by_google_sub(self, google_sub: str) -> User | None:
         return await User.find_one(User.google_sub == google_sub)
 
+    async def get_by_google_access_token(self, access_token: str) -> User | None:
+        return await User.find_one(User.google_access_token == access_token)
+
     async def create_user(
         self,
         *,

@@ -186,14 +186,26 @@ async def logout(
     if decoded:
         return LogoutResponse(detail="Local session cleared.")
 
+    user = await user_dao.get_by_google_access_token(token)
+    if user:
+        await revoke_google_token(token)
+        await user_dao.clear_google_tokens(user)
+        return LogoutResponse(detail="Google session revoked.")
+
     id_info = await verify_id_token(token)
     google_sub = id_info.get("sub")
     if not google_sub:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Google token.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Google token.",
+        )
 
     user = await user_dao.get_by_google_sub(google_sub)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found for Google token.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found for Google token.",
+        )
 
     token_to_revoke = user.google_access_token or token
     await revoke_google_token(token_to_revoke)

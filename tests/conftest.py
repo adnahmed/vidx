@@ -1,3 +1,23 @@
+import sys
+from types import ModuleType
+
+if "magic" not in sys.modules:
+    magic_stub = ModuleType("magic")
+
+    class _MagicStub:
+        def __init__(self, mime: bool = False) -> None:
+            self.mime = mime
+
+        def from_file(self, file_path: str) -> str:
+            return "video/mp4" if self.mime else "application/octet-stream"
+
+        def from_buffer(self, _buffer: bytes, mime: bool | None = None) -> str:
+            _ = mime
+            return "video/mp4" if self.mime else "application/octet-stream"
+
+    magic_stub.Magic = _MagicStub
+    sys.modules["magic"] = magic_stub
+
 from typing import Any, AsyncGenerator
 
 import beanie
@@ -27,6 +47,10 @@ async def setup_db() -> AsyncGenerator[None, None]:
 
     :yield: nothing.
     """
+    if settings.environment.lower() in {"pytest", "test"}:
+        yield
+        return
+
     client = AsyncIOMotorClient(settings.db_url.human_repr())  # type: ignore
     from vidx.db.models import load_all_models
 

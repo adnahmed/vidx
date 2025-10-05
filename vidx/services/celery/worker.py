@@ -28,6 +28,9 @@ class CeleryWorker:
             task_default_routing_key=settings.rabbitmq_routing_key,
         )
 
+        if settings.environment.lower() in {"test", "pytest"}:
+            return
+
         # Ensure the exchange exists
         with self.celery.connection() as connection:
             channel = connection.channel()

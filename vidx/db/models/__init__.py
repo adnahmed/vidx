@@ -6,6 +6,7 @@ from beanie import Document
 
 from vidx.db.models.dummy_model import DummyModel
 from vidx.db.models.user import User
+from vidx.db.models.merge_history import MergeHistory
 
 
 def load_all_models() -> Sequence[Type[Document]]:
@@ -13,4 +14,5 @@ def load_all_models() -> Sequence[Type[Document]]:
     return [
         DummyModel,
         User,
+        MergeHistory,
     ]
