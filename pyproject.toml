@@ -28,6 +28,12 @@ pydantic-async-validation = "^0.3.0"
 celery = "^5.5.2"
 httpx = "^0.27.0"
 
+authlib = "^1.3.2"
+google-auth = "^2.35.0"
+passlib = { version = "^1.7.4", extras = ["bcrypt"] }
+python-jose = { version = "^3.3.0", extras = ["cryptography"] }
+
+email-validator = "^2.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"

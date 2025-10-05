@@ -67,6 +67,21 @@ class Settings(BaseSettings):
     rabbitmq_exchange_name: str = "vidx_exchange"
     rabbitmq_routing_key: str = "vidx.process"
 
+    jwt_secret: str = os.environ.get("VIDX_JWT_SECRET") or "change_me"
+    jwt_algorithm: str = os.environ.get("VIDX_JWT_ALGORITHM") or "HS256"
+    jwt_expiration_minutes: int = int(os.environ.get("VIDX_JWT_EXP_MINUTES") or 60)
+
+    google_client_id: str | None = os.environ.get("VIDX_GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = os.environ.get("VIDX_GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str = (
+        os.environ.get("VIDX_GOOGLE_REDIRECT_URI")
+        or "http://localhost:8000/api/auth/google/callback"
+    )
+    google_scope: tuple[str, ...] = ("openid", "email", "profile")
+    google_token_uri: str = "https://oauth2.googleapis.com/token"
+    google_authorize_uri: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_revoke_uri: str = "https://oauth2.googleapis.com/revoke"
+
     @property
     def db_url(self) -> URL:
         """

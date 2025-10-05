@@ -5,6 +5,7 @@ from fastapi.responses import UJSONResponse
 
 from vidx.web.api.router import api_router
 from vidx.web.lifespan import lifespan_setup
+from vidx.web.middleware import AuthMiddleware
 
 
 def get_app() -> FastAPI:
@@ -25,6 +26,7 @@ def get_app() -> FastAPI:
         default_response_class=UJSONResponse,
     )
 
+    app.add_middleware(AuthMiddleware)
     # Main router for the API.
     app.include_router(router=api_router, prefix="/api")
 
