@@ -36,16 +36,20 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: "vidx"
       MONGO_INITDB_ROOT_PASSWORD: "vidx"
-    command: "mongod"
+    command: ["mongod", "--auth"]
     volumes:
       - db-data:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
     healthcheck:
-      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 }).ok' admin | grep 1"
+        ]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 15
+      start_period: 60s
 
   rabbitmq:
     image: rabbitmq:3-management
