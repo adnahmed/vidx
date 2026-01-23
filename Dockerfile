@@ -136,7 +136,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxv1 \
     libx11-6 \
     libxext6 \
-    libxfixes6 \
+    libxfixes3 \
     libxrandr2 \
     libass9 \
     libva2 \
@@ -209,7 +209,8 @@ COPY --chown=vidx:vidx . .
 
 # Make entrypoint executable
 COPY --chown=vidx:vidx docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Install app in editable mode
 RUN pip install --no-cache-dir -e . && \
@@ -223,5 +224,5 @@ USER vidx:vidx
 HEALTHCHECK --interval=10s --timeout=5s --retries=20 --start-period=60s \
     CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').getcode()==200 else 1)" || exit 1
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "vidx"]

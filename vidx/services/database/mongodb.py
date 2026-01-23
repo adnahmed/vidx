@@ -35,7 +35,7 @@ class MongoDBStrategy(DatabaseStrategy):
         # Initialize Beanie with document models
         await init_beanie(
             database=self.db,
-            models=[MongoDBDocument],  # Add your models here
+            document_models=[MongoDBDocument],  # Add your models here
         )
 
     async def disconnect(self) -> None:

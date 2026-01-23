@@ -45,13 +45,9 @@ class ServiceContainer:
                     table_name=os.getenv("DYNAMODB_TABLE_NAME", "vidx-items"),
                 )
             else:  # MongoDB (default)
-                host = os.getenv("VIDX_DB_HOST", "localhost")
-                port = os.getenv("VIDX_DB_PORT", "27017")
-                user = os.getenv("VIDX_DB_USER", "vidx")
-                password = os.getenv("VIDX_DB_PASSWORD", "vidx")
-                db_name = os.getenv("VIDX_DB_NAME", "vidx")
-
-                connection_url = f"mongodb://{user}:{password}@{host}:{port}/{db_name}"
+                from vidx.settings import Settings
+                settings = Settings()
+                connection_url = str(settings.db_url)
                 cls._db_strategy = MongoDBStrategy(connection_url)
 
         return cls._db_strategy
