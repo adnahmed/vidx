@@ -8,13 +8,17 @@ from typing import IO, List, Union
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import ValidationError
 from starlette import status
 
 from vidx.db.dao.merge_history_dao import MergeHistoryDAO
 from vidx.services.celery.tasks import merge_videos
 from vidx.services.celery.worker import CeleryWorker
+from vidx.services.storage.base import StorageProvider
+from vidx.services.storage.local import LocalStorageStrategy
+from vidx.services.storage.s3 import AWSS3Strategy
+from vidx.settings import settings
 from vidx.web.api.video.schema import (
     MergeHistoryItem,
     Transition,
@@ -36,86 +40,21 @@ def _resolve_submitted_name(upload: Union[UploadFile, str]) -> str:
     return name or upload
 
 
-async def save_upload_file_to_temp(
-    upload_file: Union[UploadFile, str],
-    suffix: str = "",
-) -> str:
-    """Save UploadFile or fetch from URL to a real file and return the path."""
-    original_filename: str
-    file_content_to_write: Union[bytes, IO[bytes]]
+def _get_storage_provider() -> StorageProvider:
+    if settings.storage_type.lower() == "s3":
+        return AWSS3Strategy()
+    return LocalStorageStrategy()
 
-    if isinstance(upload_file, str):
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(upload_file)
-                response.raise_for_status()
-                file_content_to_write = response.content
-            except httpx.RequestError as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Could not fetch file from URL: {upload_file}. Error: {e!s}",
-                ) from e
 
-        parsed_url = httpx.URL(upload_file)
-        filename_from_url = Path(parsed_url.path).name
-        original_filename = filename_from_url or str(std_uuid.uuid4())
-    else:
-        original_filename = upload_file.filename or str(std_uuid.uuid4())
-        file_content_to_write = upload_file.file
-        await upload_file.seek(0)
+async def save_upload_file_to_temp(upload_file: Union[UploadFile, str], suffix: str = "") -> str:
+    """
+    Save UploadFile or URL to storage and return a location string.
 
-    path_obj = Path(original_filename)
-    determined_suffix = path_obj.suffix
-
-    if not determined_suffix:
-        temp_for_mime_path = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_for_mime:
-                temp_for_mime_path = tmp_for_mime.name
-                if isinstance(file_content_to_write, bytes):
-                    tmp_for_mime.write(file_content_to_write)
-                elif isinstance(upload_file, UploadFile):
-                    await upload_file.seek(0)
-                    shutil.copyfileobj(upload_file.file, tmp_for_mime)
-                    await upload_file.seek(0)
-                else:
-                    shutil.copyfileobj(file_content_to_write, tmp_for_mime)
-                tmp_for_mime.flush()
-            if temp_for_mime_path:
-                mime_type = get_mime_type(temp_for_mime_path)
-                guessed_extension = mimetypes.guess_extension(mime_type)
-                if guessed_extension:
-                    determined_suffix = guessed_extension
-        except Exception as e:
-            raise e
-        finally:
-            if temp_for_mime_path and Path(temp_for_mime_path).exists():
-                Path(temp_for_mime_path).unlink()
-
-    if not determined_suffix:
-        determined_suffix = suffix
-
-    if determined_suffix and not determined_suffix.startswith('.'):
-        determined_suffix = '.' + determined_suffix
-
-    final_stem = path_obj.stem
-    if (
-        original_filename == str(std_uuid.uuid4())
-        and not path_obj.suffix
-        and determined_suffix
-    ):
-        final_stem = str(std_uuid.uuid4())
-
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        prefix=final_stem + '_',
-        suffix=determined_suffix,
-    ) as tmp_final:
-        if isinstance(file_content_to_write, bytes):
-            tmp_final.write(file_content_to_write)
-        else:
-            shutil.copyfileobj(file_content_to_write, tmp_final)
-        return tmp_final.name
+    For local storage, a temp file path is returned.
+    For S3 storage, a pre-signed URL is returned to be consumed by ffmpeg directly.
+    """
+    provider = _get_storage_provider()
+    return await provider.save_upload(upload_file)
 
 
 router = APIRouter()
@@ -145,6 +84,22 @@ async def get_merged_video(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Merged video file not found.",
             )
+        # If using S3 storage, upload the merged file to S3 and redirect to a pre-signed URL
+        if settings.storage_type.lower() == "s3":
+            provider = _get_storage_provider()
+            # When given a local path, upload to S3 and get a pre-signed URL
+            # Reuse the S3 strategy's upload by reading the file
+            # (Simple implementation: read and put_object)
+            from vidx.services.storage.s3 import AWSS3Strategy  # type: ignore
+
+            s3 = AWSS3Strategy()
+            # Upload and get URL
+            key = f"outputs/{Path(task.result).name}"
+            with open(task.result, "rb") as fh:
+                s3._s3.put_object(Bucket=s3._bucket, Key=key, Body=fh.read())
+            url = s3.generate_download_url_sync(key)
+            return RedirectResponse(url)
+
         media_type = get_mime_type(task.result)
         return FileResponse(task.result, media_type=media_type)
     except Exception as e:

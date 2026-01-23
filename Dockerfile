@@ -1,5 +1,6 @@
-# ─── Builder Stage ──────────────────────────────────────────────────────────
-FROM python:3.11.4-slim-bullseye AS builder
+# ─── FFmpeg Builder Stage ───────────────────────────────────────────────────
+# This stage builds FFmpeg with GL Transitions support
+FROM python:3.11.4-slim-bullseye AS ffmpeg-builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
     SRC_DIR=/opt/ffmpeg_sources \
@@ -15,10 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Ensure built tools are discoverable
 ENV PATH=/opt/ffmpeg_build/bin:$PATH
 
-# Install essential build deps (without NASM/YASM)
+# Install minimal build dependencies required
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    autoconf automake build-essential cmake git libtool pkg-config curl \
+    autoconf automake build-essential cmake git libtool pkg-config curl ca-certificates \
     libx264-dev libx265-dev libnuma-dev libvpx-dev \
     libmp3lame-dev libopus-dev libvorbis-dev libtheora-dev libass-dev \
     libfreetype6-dev libfribidi-dev libfontconfig1-dev libwebp-dev \
@@ -29,7 +30,7 @@ RUN apt-get update && \
     libx11-dev libxext-dev libxfixes-dev libxrandr-dev libxinerama-dev \
     libxcursor-dev libxi-dev libxrender-dev libxss-dev libxtst-dev \
     zlib1g-dev libglew-dev libglfw3-dev libegl-dev libxml2-dev \
-    liblzma-dev libbz2-dev libssl-dev libsoil-dev xvfb \
+    liblzma-dev libbz2-dev libssl-dev libsoil-dev xvfb wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Prepare directories
@@ -97,29 +98,32 @@ RUN PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
     --extra-libs='-lGLEW -lEGL -lSOIL -lGL -lglfw' && \
     make -j$(nproc) && make install 
 
-RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition
+RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition && echo "GL Transitions filter verified"
 
 # Copy all gl-transitions shaders
 WORKDIR $SRC_DIR
-RUN git clone https://github.com/gl-transitions/gl-transitions.git && \
+RUN git clone --depth 1 https://github.com/gl-transitions/gl-transitions.git && \
     cp -r gl-transitions/transitions/*.glsl $BUILD_DIR/bin/ && \
     mv $BUILD_DIR/bin/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl.bak && \
     mv $BUILD_DIR/bin/dissolve.glsl.bak/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl && \
-    rm -rf $BUILD_DIR/bin/dissolve.glsl.bak 
+    rm -rf $BUILD_DIR/bin/dissolve.glsl.bak && \
+    echo "Shaders copied successfully"
 
-# ─── Final Stage ────────────────────────────────────────────────────────────
-FROM python:3.11.4-slim-bullseye AS prod
+# Cleanup build directories to reduce layer size
+RUN rm -rf $SRC_DIR && \
+    rm -rf $BUILD_DIR/lib/pkgconfig && \
+    find $BUILD_DIR -name "*.a" -delete && \
+    find $BUILD_DIR -name "*.la" -delete && \
+    find $BUILD_DIR -name "*.h" -delete && \
+    strip $BUILD_DIR/bin/* 2>/dev/null || true && \
+    echo "FFmpeg build stage complete"
 
-ENV BUILD_DIR=/opt/ffmpeg_build \
-    FFMPEG_BINARY=/opt/ffmpeg_build/bin/ffmpeg \
-    FFPROBE_BINARY=/opt/ffmpeg_build/bin/ffprobe \
-    POETRY_VERSION=1.8.2 \
-    DEBIAN_FRONTEND=noninteractive
+# ─── Dependencies Layer ─────────────────────────────────────────────────────
+# This layer contains only runtime dependencies
+FROM python:3.11.4-slim-bullseye AS runtime-deps
 
-# Copy FFmpeg runtime
-COPY --from=builder /opt/ffmpeg_build /opt/ffmpeg_build
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Poetry and FFmpeg runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl libmagic1 xvfb \
     libxcb1 \
@@ -132,6 +136,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxv1 \
     libx11-6 \
     libxext6 \
+    libxfixes6 \
+    libxrandr2 \
     libass9 \
     libva2 \
     libfreetype6 \
@@ -151,22 +157,71 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     libglfw3 \
     libsoil1 \
-    && \
-    curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
-    ln -s /root/.local/bin/poetry /usr/local/bin/poetry && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# ─── Python Dependencies Layer ──────────────────────────────────────────────
+FROM runtime-deps AS python-builder
+
+ENV POETRY_VERSION=1.8.2 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+WORKDIR /tmp
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+
+# Copy project files
+COPY pyproject.toml poetry.lock ./
+
+# Install dependencies
+RUN poetry install --only main --no-interaction --no-ansi && \
+    rm -rf /root/.cache/pip && \
+    find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+# ─── Final Production Image ─────────────────────────────────────────────────
+FROM runtime-deps AS prod
+
+ENV BUILD_DIR=/opt/ffmpeg_build \
+    FFMPEG_BINARY=/opt/ffmpeg_build/bin/ffmpeg \
+    FFPROBE_BINARY=/opt/ffmpeg_build/bin/ffprobe \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DISPLAY=:1
+
+# Create non-root user for security
+RUN useradd -m -u 1000 vidx && \
+    mkdir -p /app /tmp && \
+    chown -R vidx:vidx /app /tmp
+
+# Copy FFmpeg from builder stage
+COPY --from=ffmpeg-builder --chown=vidx:vidx /opt/ffmpeg_build /opt/ffmpeg_build
+
+# Copy Python dependencies from python-builder stage
+COPY --from=python-builder --chown=vidx:vidx /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
 WORKDIR /app
 
-# Install Python deps
-COPY pyproject.toml poetry.lock ./
-RUN poetry config virtualenvs.create false && \
-    poetry install --only main --no-interaction --no-ansi
+# Copy application source
+COPY --chown=vidx:vidx . .
 
-# Copy app source
-COPY . .
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
-    pip install -e .
-ENV DISPLAY=:1
+# Make entrypoint executable
+COPY --chown=vidx:vidx docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Install app in editable mode
+RUN pip install --no-cache-dir -e . && \
+    find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local -type f -name "*.pyc" -delete
+
+# Switch to non-root user
+USER vidx:vidx
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --retries=20 --start-period=60s \
+    CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').getcode()==200 else 1)" || exit 1
+
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "-m", "vidx"]

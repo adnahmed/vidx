@@ -20,11 +20,17 @@ export DISPLAY=:1
 # Wait a moment for Xvfb to initialize
 sleep 2
 
-# Check if arguments were provided, if not, use default command
-if [ $# -eq 0 ]; then
-  echo "No command provided, using default: python -m vidx"
-  exec python -m vidx
+# Check if this is a batch job (JOB_ID env var set)
+if [ -n "$JOB_ID" ]; then
+  echo "Detected AWS Batch job: $JOB_ID"
+  exec python -m vidx.services.batch_worker
 else
-  echo "Executing command: $@"
-  exec "$@"
+  echo "Running in standard mode (not AWS Batch)"
+  if [ $# -eq 0 ]; then
+    echo "No command provided, using default: python -m vidx"
+    exec python -m vidx
+  else
+    echo "Executing command: $@"
+    exec "$@"
+  fi
 fi

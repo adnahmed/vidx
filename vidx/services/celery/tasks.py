@@ -1,10 +1,59 @@
+import logging
 import os
 import uuid
 from subprocess import CalledProcessError
 from subprocess import run as subprocess_run
-from typing import Dict
+from typing import Dict, Optional
 
 from vidx.services.celery.worker import celery
+from vidx.services.task_execution import (
+    ExecutionStrategyFactory,
+    TaskExecutionManager,
+)
+from vidx.settings import settings
+
+logger = logging.getLogger(__name__)
+
+# Initialize task execution manager on module load
+_execution_manager: Optional[TaskExecutionManager] = None
+
+
+def get_execution_manager() -> TaskExecutionManager:
+    """
+    Get or create the task execution manager.
+
+    Uses lazy initialization to ensure settings are loaded.
+    """
+    global _execution_manager
+
+    if _execution_manager is None:
+        strategy = ExecutionStrategyFactory.create_strategy(
+            environment=settings.environment,
+            aws_region=settings.aws_region,
+            batch_job_queue=settings.batch_job_queue,
+            batch_job_definition=settings.batch_job_definition,
+            s3_bucket=settings.s3_bucket,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+            aws_session_token=settings.aws_session_token,
+            aws_endpoint_url=settings.aws_endpoint_url,
+            ffmpeg_binary=settings.ffmpeg,
+        )
+        _execution_manager = TaskExecutionManager(strategy)
+        logger.info(f"Task execution manager created with: {strategy.get_name()}")
+
+    return _execution_manager
+
+
+def _gpu_available(ffmpeg_bin: str) -> bool:
+    """Detect if NVENC GPU encoding is available via ffmpeg encoders list."""
+    try:
+        result = subprocess_run(
+            [ffmpeg_bin, "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+        )
+        return "h264_nvenc" in result.stdout or "h264_nvenc" in result.stderr
+    except Exception:
+        return False
 
 
 def mime_to_codecs(mime: str) -> tuple[str, str, str]:
@@ -17,8 +66,7 @@ def mime_to_codecs(mime: str) -> tuple[str, str, str]:
     raise ValueError(f"Unsupported MIME type: {mime}")
 
 
-@celery.task(name="vidx.tasks.merge_videos")
-def merge_videos(
+def _merge_videos_sync(
     videos: Dict[str, float],
     audio: str | None,
     video_mime: str,
@@ -27,7 +75,10 @@ def merge_videos(
     transition: str,
 ) -> str:
     """
-    Merge videos using ffmpeg.
+    Synchronous video merge implementation using FFmpeg.
+
+    Called by LocalProcessExecutor for direct execution.
+    Original implementation preserved for local development.
 
     :param videos: List of video paths to merge with their durations.
     :param audio: Path to the audio file.
@@ -35,7 +86,6 @@ def merge_videos(
     :param video_resolution: Resolution of the video.
     :param audio_duration: Duration of the audio file.
     :param transition: Transition effect to apply between videos.
-    :param output_path: Output path for the merged video.
     :return: Output path for the merged video.
     """
     ffmpeg_bin = os.environ.get("FFMPEG_BINARY") or "ffmpeg"
@@ -43,10 +93,14 @@ def merge_videos(
     transition_duration = 1.0
     inputs = list(videos.keys())
     durations = list(videos.values())
-    transition_duration = 1.0
 
     # Determine output codec and extension based on mime
     vcodec, acodec, ext = mime_to_codecs(video_mime)
+    use_gpu = video_mime == "video/mp4" and _gpu_available(ffmpeg_bin)
+    gpu_args: list[str] = ["-hwaccel", "cuda"] if use_gpu else []
+    # Prefer NVENC when available for MP4
+    if use_gpu and vcodec == "libx264":
+        vcodec = "h264_nvenc"
 
     # Check if videos have audio streams
     def has_audio_stream(file_path: str) -> bool:
@@ -71,6 +125,7 @@ def merge_videos(
             ffmpeg_bin,
             "-i",
             inputs[0],
+            *gpu_args,
             "-c:v",
             vcodec,
             *(["-c:a", acodec] if audio is None else ["-c:a", "copy"]),
@@ -152,6 +207,9 @@ def merge_videos(
         cmd += ["-map", "[aout]"]
         cmd += ["-c:a", acodec]
 
+    # Add encoder and optional GPU flags
+    if gpu_args:
+        cmd += gpu_args
     cmd += ["-c:v", vcodec, "-y", merge_file]
 
     result = subprocess_run(cmd, capture_output=True, text=True, check=False)
@@ -213,6 +271,8 @@ def merge_videos(
             cmd += ["-map", "[aout]"]
             cmd += ["-c:a", acodec]
 
+        if gpu_args:
+            cmd += gpu_args
         cmd += ["-c:v", vcodec, "-y", temp]
 
         result = subprocess_run(cmd, capture_output=True, text=True, check=False)
@@ -240,6 +300,7 @@ def merge_videos(
             "0:v",
             "-map",
             "1:a",
+            *gpu_args,
             "-c:v",
             vcodec,
             "-c:a",
@@ -259,3 +320,58 @@ def merge_videos(
         os.replace(temp_audio, merge_file)
 
     return merge_file
+
+
+@celery.task(name="vidx.tasks.merge_videos")
+def merge_videos(
+    videos: Dict[str, float],
+    audio: str | None,
+    video_mime: str,
+    video_resolution: tuple[int, int],
+    audio_duration: float | None,
+    transition: str,
+    user_tier: str = "basic",
+) -> str:
+    """
+    Merge videos using the configured execution strategy.
+
+    This task delegates to either AWS Batch (production) or local FFmpeg (development).
+
+    :param videos: List of video paths to merge with their durations.
+    :param audio: Path to the audio file.
+    :param video_mime: MIME type of the video.
+    :param video_resolution: Resolution of the video.
+    :param audio_duration: Duration of the audio file.
+    :param transition: Transition effect to apply between videos.
+    :param user_tier: User tier (basic, premium, enterprise) for resource allocation.
+    :return: Output path for the merged video or task ID for tracking.
+    """
+    import asyncio
+
+    manager = get_execution_manager()
+
+    logger.info(
+        f"Submitting merge task: {len(videos)} videos, tier={user_tier}, backend={manager.get_backend_name()}"
+    )
+
+    # Create async context to submit task
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        task_id = loop.run_until_complete(
+            manager.submit_merge_task(
+                videos=videos,
+                audio=audio,
+                video_mime=video_mime,
+                video_resolution=video_resolution,
+                audio_duration=audio_duration,
+                transition=transition,
+                user_tier=user_tier,
+            )
+        )
+        logger.info(f"Task submitted with ID: {task_id}")
+        return task_id
+
+    finally:
+        loop.close()
