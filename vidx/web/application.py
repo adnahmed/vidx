@@ -27,6 +27,13 @@ def get_app() -> FastAPI:
         default_response_class=UJSONResponse,
     )
 
+    # Main router for the API.
+    app.include_router(router=api_router, prefix="/api")
+
+    # Authentication middleware for protected routes. CORS middleware must come before auth
+    # so preflight (OPTIONS) requests are handled without authentication.
+    app.add_middleware(AuthMiddleware)
+
     # Enable CORS for the frontend (development). Keep restricted origins for security.
     app.add_middleware(
         CORSMiddleware,
@@ -35,11 +42,5 @@ def get_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Authentication middleware for protected routes. CORS middleware must come before auth
-    # so preflight (OPTIONS) requests are handled without authentication.
-    app.add_middleware(AuthMiddleware)
-    # Main router for the API.
-    app.include_router(router=api_router, prefix="/api")
 
     return app

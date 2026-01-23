@@ -23,7 +23,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.user_dao = UserDAO()
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Response]) -> Response:
-        if not request.url.path.startswith(self.protected_prefix):
+        if not request.url.path.startswith(self.protected_prefix) or request.method == "OPTIONS":
             return await call_next(request)
 
         authorization = request.headers.get("Authorization")

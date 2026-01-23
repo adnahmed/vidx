@@ -172,13 +172,22 @@ WORKDIR /tmp
 RUN curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry
 
-# Copy project files
+# Copy project files required to resolve dependencies
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies
+# Install poetry-managed tooling (no virtualenv) then export locked dependencies
+# and build wheels for those dependencies. Because this only depends on the lockfile,
+# Docker can cache it when app source changes.
 RUN poetry install --only main --no-interaction --no-ansi && \
+    poetry export --format requirements.txt --output requirements.txt --without-hashes --only main && \
+    python -m pip wheel -r requirements.txt -w /wheels && \
     rm -rf /root/.cache/pip && \
     find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+# Now copy the application source and build the app wheel. This step will change when
+# the application code changes, but the dependency wheels in /wheels will remain cached.
+COPY . .
+RUN python -m pip wheel . -w /wheels && rm -rf /root/.cache/pip || true
 
 # ─── Final Production Image ─────────────────────────────────────────────────
 FROM runtime-deps AS prod
@@ -204,18 +213,22 @@ COPY --from=python-builder --chown=vidx:vidx /usr/local/lib/python3.11/site-pack
 
 WORKDIR /app
 
-# Copy application source
-COPY --chown=vidx:vidx . .
-
 # Make entrypoint executable
 COPY --chown=vidx:vidx docker-entrypoint.sh /usr/local/bin/
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Install app in editable mode
-RUN pip install --no-cache-dir -e . && \
+# Copy pre-built wheels from the python-builder stage and install them. Installing wheels
+# is cache-friendly: if dependencies haven't changed, this layer will be cached and
+# pip won't re-run a costly install on every rebuild.
+COPY --from=python-builder --chown=vidx:vidx /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels && \
     find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local -type f -name "*.pyc" -delete
+
+# Copy application source (after installing wheels) so that code changes won't bust the
+# dependency-install layer. This keeps rebuilds fast when only app code changed.
+COPY --chown=vidx:vidx . .
 
 # Switch to non-root user
 USER vidx:vidx
