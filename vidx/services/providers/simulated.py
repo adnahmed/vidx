@@ -48,6 +48,12 @@ def _prompt_hash(prompt: str) -> int:
 class SimulatedProvider(AIProvider):
     """Provider transport stand-in: no model inference, real async webhooks."""
 
+    # Bounds concurrent in-process FFmpeg artifact production so a burst of
+    # submissions cannot exhaust memory on small instances.
+    _artifact_semaphore = threading.BoundedSemaphore(
+        max(1, settings.simulated_provider_max_concurrency),
+    )
+
     def __init__(self, component: GenerationComponent, name: str = "simulated") -> None:
         self.name = name
         self.component = component
@@ -116,18 +122,19 @@ class SimulatedProvider(AIProvider):
 
     # ── artifact production (FFmpeg only, no inference) ──────────────────────
     def _produce_artifact(self, request: GenerationRequest, job_id: str) -> Optional[Path]:
-        try:
-            if self.component == GenerationComponent.IMAGE:
-                return self._make_image(request.prompt, job_id)
-            if self.component == GenerationComponent.VIDEO:
-                return self._make_video(request.prompt, job_id)
-            if self.component == GenerationComponent.AUDIO:
-                return self._make_audio(request.prompt, job_id)
-            if self.component == GenerationComponent.SUBTITLE:
-                return self._make_subtitle(request.prompt, job_id)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Simulated artifact production failed: %s", exc)
-        return None
+        with self._artifact_semaphore:
+            try:
+                if self.component == GenerationComponent.IMAGE:
+                    return self._make_image(request.prompt, job_id)
+                if self.component == GenerationComponent.VIDEO:
+                    return self._make_video(request.prompt, job_id)
+                if self.component == GenerationComponent.AUDIO:
+                    return self._make_audio(request.prompt, job_id)
+                if self.component == GenerationComponent.SUBTITLE:
+                    return self._make_subtitle(request.prompt, job_id)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.exception("Simulated artifact production failed: %s", exc)
+            return None
 
     def _run_ffmpeg(self, args: list[str]) -> None:
         result = subprocess.run(

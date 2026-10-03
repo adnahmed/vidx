@@ -179,6 +179,11 @@ class Settings(BaseSettings):
     simulated_provider_delay_seconds: float = float(
         os.environ.get("VIDX_SIMULATED_PROVIDER_DELAY") or 2.0,
     )
+    # Max concurrent artifact productions in the simulated transport (bounds
+    # in-process ffmpeg memory on small instances).
+    simulated_provider_max_concurrency: int = int(
+        os.environ.get("VIDX_SIMULATED_MAX_CONCURRENCY") or 2,
+    )
 
     # ── Social platform credentials ─────────────────────────────────────────
     linkedin_access_token: Optional[str] = os.environ.get("VIDX_LINKEDIN_ACCESS_TOKEN")
