@@ -41,9 +41,42 @@ if [ "${VIDX_EMBEDDED_MONGO:-false}" = "true" ]; then
     --bind_ip 127.0.0.1 \
     --port "${VIDX_DB_PORT:-27017}" \
     --wiredTigerCacheSizeGB "${VIDX_MONGO_CACHE_GB:-0.25}" \
+    --auth \
     --quiet &
   export VIDX_DB_HOST="${VIDX_DB_HOST:-127.0.0.1}"
   wait_for_port "${VIDX_DB_HOST}" "${VIDX_DB_PORT:-27017}"
+
+  # Create the application user through MongoDB's localhost exception so the
+  # API/worker can authenticate. Safe to re-run when the user already exists.
+  python - <<'PY'
+import os
+import sys
+
+from pymongo import MongoClient
+from pymongo.errors import OperationFailure, PyMongoError
+
+host = os.environ.get("VIDX_DB_HOST", "127.0.0.1")
+port = int(os.environ.get("VIDX_DB_PORT", "27017"))
+user = os.environ.get("VIDX_DB_USER", "vidx")
+password = os.environ.get("VIDX_DB_PASS", "vidx")
+try:
+    client = MongoClient(
+        f"mongodb://{host}:{port}/", serverSelectionTimeoutMS=15000
+    )
+    client.admin.command(
+        "createUser", user, pwd=password, roles=[{"role": "root", "db": "admin"}]
+    )
+    print("Created embedded MongoDB application user")
+except OperationFailure as exc:
+    if exc.code == 51003:  # UserAlreadyExists
+        print("Embedded MongoDB application user already exists")
+    else:
+        print(f"Could not create MongoDB user: {exc}", file=sys.stderr)
+        sys.exit(1)
+except PyMongoError as exc:
+    print(f"MongoDB user bootstrap failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
 fi
 
 if [ "${VIDX_EMBEDDED_REDIS:-false}" = "true" ]; then

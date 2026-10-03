@@ -160,6 +160,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     libglfw3 \
     libsoil1 \
+    libsndio7.0 \
     redis-server \
     gnupg \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -193,8 +194,10 @@ RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt -o r
 
 # Now copy the application source and build the app wheel. This step will change when
 # the application code changes, but the dependency wheels in /wheels will remain cached.
+# --no-deps keeps /wheels limited to the locked dependency set exported above; without
+# it pip would re-resolve and add conflicting duplicate versions.
 COPY . .
-RUN python -m pip wheel . -w /wheels && rm -rf /root/.cache/pip || true
+RUN python -m pip wheel . -w /wheels --no-deps && rm -rf /root/.cache/pip
 
 # ─── Final Production Image ─────────────────────────────────────────────────
 FROM runtime-deps AS prod
@@ -230,7 +233,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh /usr/local/bin/render-e
 # pip won't re-run a costly install on every rebuild.
 COPY --from=python-builder --chown=vidx:vidx /wheels /wheels
 RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels && \
-    find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    (find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true) && \
     find /usr/local -type f -name "*.pyc" -delete
 
 # Copy application source (after installing wheels) so that code changes won't bust the
