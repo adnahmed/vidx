@@ -104,9 +104,12 @@ RUN /opt/ffmpeg_build/bin/ffmpeg -filters | grep gltransition && echo "GL Transi
 WORKDIR $SRC_DIR
 RUN git clone --depth 1 https://github.com/gl-transitions/gl-transitions.git && \
     cp -r gl-transitions/transitions/*.glsl $BUILD_DIR/bin/ && \
-    mv $BUILD_DIR/bin/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl.bak && \
-    mv $BUILD_DIR/bin/dissolve.glsl.bak/dissolve.glsl $BUILD_DIR/bin/dissolve.glsl && \
-    rm -rf $BUILD_DIR/bin/dissolve.glsl.bak && \
+    if [ -d "$BUILD_DIR/bin/dissolve.glsl" ]; then \
+        mv "$BUILD_DIR/bin/dissolve.glsl" "$BUILD_DIR/bin/dissolve.glsl.d" && \
+        mv "$BUILD_DIR/bin/dissolve.glsl.d/dissolve.glsl" "$BUILD_DIR/bin/dissolve.glsl" && \
+        rm -rf "$BUILD_DIR/bin/dissolve.glsl.d"; \
+    fi && \
+    test -f "$BUILD_DIR/bin/dissolve.glsl" && \
     echo "Shaders copied successfully"
 
 # Cleanup build directories to reduce layer size
