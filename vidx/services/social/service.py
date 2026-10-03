@@ -170,12 +170,21 @@ class SocialPublishingService:
 
         image_url = None
         if post.image_ref:
+            from pathlib import Path
+
             from vidx.services.storage.factory import get_storage_provider
 
             try:
                 image_url = await get_storage_provider().generate_download_url(
-                    post.image_ref,
+                    post.image_ref
                 )
+                if not image_url.startswith(("http://", "https://")):
+                    # Local storage: expose through the public media route so
+                    # the platform can fetch it.
+                    from vidx.settings import settings as _settings
+
+                    base = (_settings.public_base_url or "").rstrip("/")
+                    image_url = f"{base}/api/media/generated/{Path(image_url).name}"
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("Could not resolve post image for publishing: %s", exc)
 

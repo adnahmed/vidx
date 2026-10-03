@@ -46,8 +46,16 @@ class Settings(BaseSettings):
 
     # Directory for locally stored generated artifacts (local storage mode).
     local_storage_dir: str = os.environ.get("VIDX_LOCAL_STORAGE_DIR") or str(
-        TEMP_DIR / "vidx-media",
+        TEMP_DIR / "vidx-media"
     )
+
+    # Split-deployment artifact bridge. When a worker runs in a separate
+    # container from the API (render.yaml worker service), generated artifacts
+    # are uploaded to and downloaded from the API over HTTP:
+    #   VIDX_STORAGE_REMOTE_BASE_URL = https://<api-host>
+    #   VIDX_INTERNAL_TOKEN          = shared secret for the internal endpoint
+    storage_remote_base_url: str = os.environ.get("VIDX_STORAGE_REMOTE_BASE_URL") or ""
+    internal_token: str = os.environ.get("VIDX_INTERNAL_TOKEN") or ""
 
     # Comma-separated CORS origins for the web frontend.
     cors_origins: str = os.environ.get(

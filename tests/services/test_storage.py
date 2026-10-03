@@ -50,3 +50,32 @@ async def test_media_route_rejects_traversal(tmp_path, monkeypatch) -> None:
         assert bad.status_code in (400, 404)
         missing = await client.get("/api/media/generated/nope.png")
         assert missing.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_internal_artifact_upload_requires_token(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_storage_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "internal_token", "secret-token")
+
+    from vidx.web.api.internal.views import router as internal_router
+
+    app = FastAPI()
+    app.include_router(internal_router, prefix="/api/internal")
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        missing = await client.post(
+            "/api/internal/artifacts", files={"file": ("a.mp4", b"data")}
+        )
+        assert missing.status_code == 401
+        wrong = await client.post(
+            "/api/internal/artifacts",
+            headers={"X-Internal-Token": "nope"},
+            files={"file": ("a.mp4", b"data")},
+        )
+        assert wrong.status_code == 401
+        ok = await client.post(
+            "/api/internal/artifacts",
+            headers={"X-Internal-Token": "secret-token"},
+            files={"file": ("a.mp4", b"data")},
+        )
+        assert ok.status_code == 200
+        assert (tmp_path / "a.mp4").read_bytes() == b"data"
