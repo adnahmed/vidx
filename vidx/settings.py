@@ -40,9 +40,20 @@ class Settings(BaseSettings):
     environment: str = "dev"
 
     # Queue & Storage abstraction types
-    queue_type: str = os.environ.get("QUEUE_TYPE") or "rabbitmq"  # rabbitmq | sqs
+    queue_type: str = os.environ.get("QUEUE_TYPE") or "rabbitmq"  # rabbitmq | sqs | redis
     storage_type: str = os.environ.get("STORAGE_TYPE") or "local"  # local | s3
     cache_type: str = os.environ.get("CACHE_TYPE") or "redis"  # redis | elasticache
+
+    # Directory for locally stored generated artifacts (local storage mode).
+    local_storage_dir: str = os.environ.get("VIDX_LOCAL_STORAGE_DIR") or str(
+        TEMP_DIR / "vidx-media",
+    )
+
+    # Comma-separated CORS origins for the web frontend.
+    cors_origins: str = os.environ.get(
+        "VIDX_CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080",
+    )
 
     # ffmpeg binaries
     ffmpeg: str = (
@@ -119,6 +130,64 @@ class Settings(BaseSettings):
     jwt_algorithm: str = os.environ.get("VIDX_JWT_ALGORITHM") or "HS256"
     jwt_expiration_minutes: int = int(os.environ.get("VIDX_JWT_EXP_MINUTES") or 60)
 
+    # Public base URL of the API, used to build provider webhook URLs.
+    public_base_url: str = os.environ.get("VIDX_PUBLIC_BASE_URL") or "http://localhost:8000"
+
+    # Shared token protecting the internal scheduler trigger endpoint.
+    scheduler_token: str = os.environ.get("VIDX_SCHEDULER_TOKEN") or ""
+
+    # ── AI generation providers ──────────────────────────────────────────────
+    # Provider transport mode:
+    #   "http"      → real external provider APIs over HTTP (production)
+    #   "simulated" → deterministic transport stand-in used for offline/dev
+    #                 verification. It never performs model inference; it only
+    #                 exercises submit → job id → webhook → storage.
+    ai_provider_mode: str = os.environ.get("VIDX_AI_PROVIDER_MODE") or "simulated"
+    ai_image_provider: str = os.environ.get("VIDX_AI_IMAGE_PROVIDER") or "default"
+    ai_video_provider: str = os.environ.get("VIDX_AI_VIDEO_PROVIDER") or "default"
+    ai_audio_provider: str = os.environ.get("VIDX_AI_AUDIO_PROVIDER") or "default"
+    ai_subtitle_provider: str = os.environ.get("VIDX_AI_SUBTITLE_PROVIDER") or "default"
+
+    # Generic HTTP provider configuration (per component kind).
+    ai_image_endpoint: Optional[str] = os.environ.get("VIDX_AI_IMAGE_ENDPOINT")
+    ai_image_api_key: Optional[str] = os.environ.get("VIDX_AI_IMAGE_API_KEY")
+    ai_image_model: Optional[str] = os.environ.get("VIDX_AI_IMAGE_MODEL")
+    ai_video_endpoint: Optional[str] = os.environ.get("VIDX_AI_VIDEO_ENDPOINT")
+    ai_video_api_key: Optional[str] = os.environ.get("VIDX_AI_VIDEO_API_KEY")
+    ai_video_model: Optional[str] = os.environ.get("VIDX_AI_VIDEO_MODEL")
+    ai_audio_endpoint: Optional[str] = os.environ.get("VIDX_AI_AUDIO_ENDPOINT")
+    ai_audio_api_key: Optional[str] = os.environ.get("VIDX_AI_AUDIO_API_KEY")
+    ai_audio_model: Optional[str] = os.environ.get("VIDX_AI_AUDIO_MODEL")
+    ai_subtitle_endpoint: Optional[str] = os.environ.get("VIDX_AI_SUBTITLE_ENDPOINT")
+    ai_subtitle_api_key: Optional[str] = os.environ.get("VIDX_AI_SUBTITLE_API_KEY")
+    ai_subtitle_model: Optional[str] = os.environ.get("VIDX_AI_SUBTITLE_MODEL")
+
+    # Extra provider parameters (JSON object merged into the submit payload).
+    ai_extra_params: Optional[str] = os.environ.get("VIDX_AI_EXTRA_PARAMS")
+
+    # HMAC secret used to validate provider webhook callbacks.
+    provider_webhook_secret: str = (
+        os.environ.get("VIDX_PROVIDER_WEBHOOK_SECRET") or "change_me_provider"
+    )
+    provider_submit_timeout_seconds: int = int(
+        os.environ.get("VIDX_AI_SUBMIT_TIMEOUT") or 30,
+    )
+    provider_download_timeout_seconds: int = int(
+        os.environ.get("VIDX_AI_DOWNLOAD_TIMEOUT") or 300,
+    )
+    # Simulated provider callback delay (seconds) — keeps dev feedback fast.
+    simulated_provider_delay_seconds: float = float(
+        os.environ.get("VIDX_SIMULATED_PROVIDER_DELAY") or 2.0,
+    )
+
+    # ── Social platform credentials ─────────────────────────────────────────
+    linkedin_access_token: Optional[str] = os.environ.get("VIDX_LINKEDIN_ACCESS_TOKEN")
+    linkedin_author_urn: Optional[str] = os.environ.get("VIDX_LINKEDIN_AUTHOR_URN")
+    linkedin_api_base_url: str = (
+        os.environ.get("VIDX_LINKEDIN_API_BASE_URL") or "https://api.linkedin.com"
+    )
+    linkedin_api_version: str = os.environ.get("VIDX_LINKEDIN_API_VERSION") or "202411"
+
     google_client_id: str | None = os.environ.get("VIDX_GOOGLE_CLIENT_ID")
     google_client_secret: str | None = os.environ.get("VIDX_GOOGLE_CLIENT_SECRET")
     google_redirect_uri: str = (
@@ -171,11 +240,21 @@ class Settings(BaseSettings):
         Compute Celery broker URL based on QUEUE_TYPE.
 
         For RabbitMQ, returns amqp://... URL.
+        For Redis, returns redis://... URL (used by Render deployments where
+        no managed RabbitMQ exists).
         For AWS SQS, returns sqs:// scheme (Celery will pick up AWS creds from env).
         """
         if self.queue_type.lower() == "sqs":
             # Celery SQS broker uses sqs://; region and options supplied via celery.conf
             return URL("sqs://")
+        if self.queue_type.lower() == "redis":
+            return URL.build(
+                scheme="redis",
+                host=self.redis_host,
+                port=self.redis_port,
+                password=self.redis_password,
+                path=f"/{self.redis_db}",
+            )
         # Default to RabbitMQ
         path = ""
         if self.rabbitmq_base is not None:

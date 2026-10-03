@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+from datetime import datetime
 from subprocess import CalledProcessError
 from subprocess import run as subprocess_run
 from typing import Dict, Optional
@@ -49,7 +50,7 @@ def _gpu_available(ffmpeg_bin: str) -> bool:
     """Detect if NVENC GPU encoding is available via ffmpeg encoders list."""
     try:
         result = subprocess_run(
-            [ffmpeg_bin, "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+            [ffmpeg_bin, "-hide_banner", "-encoders"], capture_output=True, text=True, check=False,
         )
         return "h264_nvenc" in result.stdout or "h264_nvenc" in result.stderr
     except Exception:
@@ -351,7 +352,7 @@ def merge_videos(
     manager = get_execution_manager()
 
     logger.info(
-        f"Submitting merge task: {len(videos)} videos, tier={user_tier}, backend={manager.get_backend_name()}"
+        f"Submitting merge task: {len(videos)} videos, tier={user_tier}, backend={manager.get_backend_name()}",
     )
 
     # Create async context to submit task
@@ -368,10 +369,244 @@ def merge_videos(
                 audio_duration=audio_duration,
                 transition=transition,
                 user_tier=user_tier,
-            )
+            ),
         )
         logger.info(f"Task submitted with ID: {task_id}")
         return task_id
 
     finally:
         loop.close()
+
+
+# ── Social media scheduling / publishing ─────────────────────────────────────
+
+
+@celery.task(name="vidx.tasks.publish_due_social_posts")
+def publish_due_social_posts() -> int:
+    """Publish every Scheduled post whose time has arrived (beat, every minute)."""
+    from datetime import datetime, timedelta
+
+    from vidx.db.dao.project_dao import SocialPostDAO
+    from vidx.db.models.project import Project
+    from vidx.db.models.social_post import PostStatus, SocialPost
+    from vidx.services.celery.db import run_with_db
+    from vidx.services.social.service import SocialPublishingService
+
+    async def _run() -> int:
+        dao = SocialPostDAO()
+        now = datetime.utcnow()
+        posts = await dao.due_scheduled(now=now)
+        service = SocialPublishingService()
+        published = 0
+        for post in posts:
+            stale_before = now - timedelta(minutes=10)
+            claim = await SocialPost.get_motor_collection().find_one_and_update(
+                {
+                    "_id": post.id,
+                    "status": PostStatus.SCHEDULED.value,
+                    "scheduled_at_utc": {"$lte": now},
+                    "$or": [
+                        {"claimed_at": None},
+                        {"claimed_at": {"$lte": stale_before}},
+                    ],
+                },
+                {"$set": {"claimed_at": now, "updated_at": now}},
+            )
+            if claim is None:
+                continue
+            project = await Project.get(post.project_id)
+            if project is None:
+                post.status = PostStatus.FAILED
+                post.error = "Project no longer exists."
+                await post.save()
+                continue
+            await service.publish(post, project)
+            published += 1
+        return published
+
+    return run_with_db(_run)
+
+
+@celery.task(name="vidx.tasks.render_scene")
+def render_scene_task(scene_id: str) -> str:
+    """Render one scene's final video (post-processing + logo + subtitles)."""
+    from pathlib import Path
+
+    from beanie import PydanticObjectId
+
+    from vidx.db.dao.project_dao import SceneDAO
+    from vidx.db.models.project import ComponentStatus, Project
+    from vidx.db.models.scene import Scene
+    from vidx.services.celery.db import run_with_db
+    from vidx.services.render.ffmpeg_render import render_service
+    from vidx.services.storage.factory import get_storage_provider
+
+    async def _run() -> str:
+        scene = await Scene.get(PydanticObjectId(scene_id))
+        if scene is None:
+            return "missing"
+        project = await Project.get(scene.project_id)
+        if project is None:
+            return "missing"
+
+        scene_dao = SceneDAO()
+        await scene_dao.update_component(
+            scene_id=scene.id,
+            component="render",
+            fields={
+                "status": ComponentStatus.PROCESSING,
+                "error": None,
+                "submitted_at": scene.render.submitted_at or datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            },
+        )
+
+        try:
+            storage = get_storage_provider()
+            if scene.video.status != ComponentStatus.COMPLETED or not scene.video.storage_ref:
+                raise RuntimeError("Generated video is not available for rendering.")
+            video_path = await storage.materialize(scene.video.storage_ref)
+            audio_path = None
+            if scene.audio.status == ComponentStatus.COMPLETED and scene.audio.storage_ref:
+                audio_path = await storage.materialize(scene.audio.storage_ref)
+            subtitle_path = None
+            if scene.subtitle.status == ComponentStatus.COMPLETED and scene.subtitle.storage_ref:
+                subtitle_path = await storage.materialize(scene.subtitle.storage_ref)
+            logo_path = None
+            if project.image_ref:
+                logo_path = await storage.materialize(project.image_ref)
+
+            options = project.options or {}
+            resolution = tuple(options.get("resolution") or (1280, 720))
+            output_path = render_service.new_output_path()
+            await render_service.render_scene(
+                video_path=video_path,
+                output_path=output_path,
+                audio_path=audio_path,
+                subtitle_path=subtitle_path,
+                logo_path=logo_path,
+                resolution=(int(resolution[0]), int(resolution[1])),
+                logo_position=options.get("logo_position", "bottom-right"),
+            )
+            data = Path(output_path).read_bytes()
+            ref = await storage.save_bytes(data, f"scene_{scene.scene_number}_final.mp4")
+            await scene_dao.update_component(
+                scene_id=scene.id,
+                component="render",
+                fields={
+                    "storage_ref": ref,
+                    "status": ComponentStatus.COMPLETED,
+                    "error": None,
+                    "completed_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                },
+            )
+            fresh = await scene_dao.get(scene_id=scene.id)
+            if fresh is not None:
+                fresh.recompute_overall_status()
+                await scene_dao.update_fields(
+                    scene_id=scene.id,
+                    fields={"overall_status": fresh.overall_status},
+                )
+            return "completed"
+        except Exception as exc:
+            logger.exception("Scene render failed for %s", scene_id)
+            await scene_dao.update_component(
+                scene_id=scene.id,
+                component="render",
+                fields={
+                    "status": ComponentStatus.FAILED,
+                    "error": str(exc),
+                    "updated_at": datetime.utcnow(),
+                },
+            )
+            fresh = await scene_dao.get(scene_id=scene.id)
+            if fresh is not None:
+                fresh.recompute_overall_status()
+                await scene_dao.update_fields(
+                    scene_id=scene.id,
+                    fields={"overall_status": fresh.overall_status},
+                )
+            return f"failed: {exc}"
+
+    return run_with_db(_run)
+
+
+@celery.task(name="vidx.tasks.assemble_project_video")
+def assemble_project_video(project_id: str) -> str:
+    """Assemble the project's final video from completed scene renders."""
+    from pathlib import Path
+
+    from beanie import PydanticObjectId
+
+    from vidx.db.dao.project_dao import ProjectDAO, SceneDAO
+    from vidx.db.models.project import ComponentStatus, Project, ProjectStatus
+    from vidx.services.celery.db import run_with_db
+    from vidx.services.render.ffmpeg_render import render_service
+    from vidx.services.storage.factory import get_storage_provider
+
+    async def _run() -> str:
+        project = await Project.get(PydanticObjectId(project_id))
+        if project is None:
+            return "missing"
+        scenes = await SceneDAO().list_for_project(project_id=project.id)
+
+        project_dao = ProjectDAO()
+        await project_dao.update_final_video(
+            project_id=project.id,
+            fields={"status": ComponentStatus.PROCESSING, "error": None},
+        )
+        await project_dao.update_fields(
+            project_id=project.id, fields={"status": ProjectStatus.RENDERING},
+        )
+
+        try:
+            if not scenes:
+                raise RuntimeError("Project has no scenes.")
+            incomplete = [
+                scene.scene_number
+                for scene in scenes
+                if scene.render.status != ComponentStatus.COMPLETED or not scene.render.storage_ref
+            ]
+            if incomplete:
+                raise RuntimeError(
+                    "All scenes must be rendered before the final video: "
+                    + ", ".join(str(number) for number in incomplete),
+                )
+            storage = get_storage_provider()
+            paths = [await storage.materialize(scene.render.storage_ref) for scene in scenes]  # type: ignore[arg-type]
+            options = project.options or {}
+            resolution = tuple(options.get("resolution") or (1280, 720))
+            output_path = render_service.new_output_path()
+            await render_service.assemble_final(
+                scene_paths=paths,
+                output_path=output_path,
+                resolution=(int(resolution[0]), int(resolution[1])),
+            )
+            data = Path(output_path).read_bytes()
+            ref = await storage.save_bytes(data, "final_video.mp4")
+            await project_dao.update_final_video(
+                project_id=project.id,
+                fields={
+                    "storage_ref": ref,
+                    "status": ComponentStatus.COMPLETED,
+                    "error": None,
+                    "completed_at": datetime.utcnow(),
+                },
+            )
+            await project_dao.update_fields(
+                project_id=project.id, fields={"status": ProjectStatus.COMPLETED},
+            )
+            return "completed"
+        except Exception as exc:
+            logger.exception("Final assembly failed for %s", project_id)
+            await project_dao.update_final_video(
+                project_id=project.id,
+                fields={"status": ComponentStatus.FAILED, "error": str(exc)},
+            )
+            await project_dao.update_fields(
+                project_id=project.id, fields={"status": ProjectStatus.FAILED},
+            )
+            return f"failed: {exc}"
+
+    return run_with_db(_run)

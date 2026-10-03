@@ -15,7 +15,7 @@ class User(Document):
     hashed_password: str | None = None
     full_name: str | None = None
     is_active: bool = True
-    google_sub: Annotated[str | None, Indexed(unique=True)] = None
+    google_sub: Annotated[str | None, Indexed(unique=True, partialFilterExpression={"google_sub": {"$type": "string"}})] = None
     google_access_token: str | None = None
     google_refresh_token: str | None = None
     providers: list[str] = Field(default_factory=list)

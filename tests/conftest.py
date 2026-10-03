@@ -45,20 +45,31 @@ async def setup_db() -> AsyncGenerator[None, None]:
     """
     Fixture to create database connection.
 
+    Tests run against an in-memory MongoDB (mongomock-motor) so the full
+    Beanie model/DAO layer is exercised without an external database.
+
     :yield: nothing.
     """
+    from vidx.db.models import load_all_models
+
     if settings.environment.lower() in {"pytest", "test"}:
+        from mongomock_motor import AsyncMongoMockClient
+
+        mock_client = AsyncMongoMockClient()
+        await beanie.init_beanie(
+            database=mock_client[settings.db_base],
+            document_models=load_all_models(),  # type: ignore[arg-type]
+        )
         yield
         return
 
     client = AsyncIOMotorClient(settings.db_url.human_repr())  # type: ignore
-    from vidx.db.models import load_all_models
-
     await beanie.init_beanie(
         database=client[settings.db_base],
         document_models=load_all_models(),  # type: ignore
     )
     yield
+    client.close()
 
 
 @pytest.fixture

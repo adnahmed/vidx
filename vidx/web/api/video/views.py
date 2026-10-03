@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import ValidationError
 from starlette import status
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from vidx.db.dao.merge_history_dao import MergeHistoryDAO
 from vidx.services.celery.tasks import merge_videos
@@ -30,7 +31,7 @@ from vidx.web.api.video.schema import (
 
 
 def _resolve_submitted_name(upload: Union[UploadFile, str]) -> str:
-    if isinstance(upload, UploadFile):
+    if isinstance(upload, (UploadFile, StarletteUploadFile)):
         return upload.filename or "uploaded-file"
     try:
         parsed = httpx.URL(upload)

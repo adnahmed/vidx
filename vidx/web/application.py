@@ -1,9 +1,10 @@
 from importlib import metadata
 
 from fastapi import FastAPI
-from fastapi.responses import UJSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import UJSONResponse
 
+from vidx.settings import settings
 from vidx.web.api.router import api_router
 from vidx.web.lifespan import lifespan_setup
 from vidx.web.middleware import AuthMiddleware
@@ -34,10 +35,17 @@ def get_app() -> FastAPI:
     # so preflight (OPTIONS) requests are handled without authentication.
     app.add_middleware(AuthMiddleware)
 
-    # Enable CORS for the frontend (development). Keep restricted origins for security.
+    # Enable CORS for the frontend. Origins are configurable via
+    # VIDX_CORS_ORIGINS (comma-separated) so deployed frontends can be added
+    # without code changes.
+    cors_origins = [
+        origin.strip()
+        for origin in (settings.cors_origins or "").split(",")
+        if origin.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -1,4 +1,5 @@
 import asyncio
+import mimetypes
 import tempfile
 from datetime import datetime
 from enum import Enum
@@ -6,13 +7,17 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import ffmpeg
-import magic
 from celery import states
 from fastapi import HTTPException
 from pydantic import BaseModel, field_validator
 from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
 
 from vidx.settings import settings
+
+try:
+    import magic
+except ImportError:  # libmagic is not installed (e.g. on Windows)
+    magic = None
 
 
 
@@ -272,8 +277,13 @@ def get_mime_type(file_path: str) -> str:
     Returns:
         str: MIME type of the file.
     """
-    magic_instance = magic.Magic(mime=True)
-    return magic_instance.from_file(file_path)
+    if magic is not None:
+        return magic.Magic(mime=True).from_file(file_path)
+    # Fallback when libmagic is unavailable: infer from the file extension.
+    mime, _ = mimetypes.guess_type(file_path)
+    if mime == "audio/x-wav":
+        return "audio/wav"
+    return mime or "application/octet-stream"
 
 
 class ValidationErrorCodes(str, Enum):

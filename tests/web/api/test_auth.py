@@ -382,3 +382,14 @@ async def test_logout_with_google_id_token_falls_back_to_profile_lookup(
     assert stored is not None
     assert stored.google_access_token is None
     assert stored.google_refresh_token is None
+
+@pytest.mark.anyio
+async def test_invalid_bearer_token_on_protected_route_returns_401(
+    client: AsyncClient,
+) -> None:
+    """An expired/garbage bearer token must produce 401, never a 500."""
+    response = await client.get(
+        "/api/projects",
+        headers={"Authorization": "Bearer not-a-valid-jwt"},
+    )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

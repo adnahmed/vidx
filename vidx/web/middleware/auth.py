@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from vidx.db.dao.user_dao import UserDAO
 from vidx.db.models.user import User
@@ -17,13 +18,25 @@ from vidx.services.auth.security import decode_access_token
 class AuthMiddleware(BaseHTTPMiddleware):
     """Authenticate requests targeting protected API prefixes."""
 
-    def __init__(self, app, protected_prefix: str = "/api/video") -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        protected_prefixes: tuple[str, ...] = (
+            "/api/video",
+            "/api/projects",
+            "/api/posts",
+            "/api/scenes",
+        ),
+    ) -> None:
         super().__init__(app)
-        self.protected_prefix = protected_prefix
+        self.protected_prefixes = protected_prefixes
         self.user_dao = UserDAO()
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Response]) -> Response:
-        if not request.url.path.startswith(self.protected_prefix) or request.method == "OPTIONS":
+        is_protected = any(
+            request.url.path.startswith(prefix) for prefix in self.protected_prefixes
+        )
+        if not is_protected or request.method == "OPTIONS":
             return await call_next(request)
 
         authorization = request.headers.get("Authorization")
@@ -68,9 +81,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def _authenticate_google(self, token: str) -> tuple[User | None, str | None]:
         try:
             id_info = await verify_id_token(token)
-        except HTTPException as exc:
-            if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
-                raise
+        except HTTPException:
+            # A token that cannot be verified (expired/invalid JWT) or a server
+            # without Google configuration is simply not a Google session:
+            # fall through to a clean 401 rather than a 500.
             return None, None
         except Exception:
             return None, None

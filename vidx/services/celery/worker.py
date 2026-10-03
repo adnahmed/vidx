@@ -25,6 +25,12 @@ class CeleryWorker:
                 "vidx.tasks.*": {"queue": settings.rabbitmq_queue_name},
             },
             "task_default_queue": settings.rabbitmq_queue_name,
+            "beat_schedule": {
+                "publish-due-social-posts": {
+                    "task": "vidx.tasks.publish_due_social_posts",
+                    "schedule": 60.0,
+                },
+            },
         }
 
         # SQS broker specifics
@@ -35,7 +41,17 @@ class CeleryWorker:
                         "region": settings.aws_region,
                         "visibility_timeout": settings.sqs_visibility_timeout,
                     },
-                }
+                },
+            )
+        elif settings.queue_type.lower() == "redis":
+            # Redis broker (Render deployment): priority-based queue routing
+            # still works through the default queue name.
+            base_conf.update(
+                {
+                    "broker_transport_options": {
+                        "visibility_timeout": settings.sqs_visibility_timeout,
+                    },
+                },
             )
         else:
             # RabbitMQ specifics
@@ -43,7 +59,7 @@ class CeleryWorker:
                 {
                     "task_default_exchange": settings.rabbitmq_exchange_name,
                     "task_default_routing_key": settings.rabbitmq_routing_key,
-                }
+                },
             )
 
         self.celery.conf.update(base_conf)
@@ -52,7 +68,7 @@ class CeleryWorker:
             return
 
         # Ensure the exchange/queue exists for RabbitMQ only
-        if settings.queue_type.lower() != "sqs":
+        if settings.queue_type.lower() == "rabbitmq":
             with self.celery.connection() as connection:
                 channel = connection.channel()
                 channel.exchange_declare(

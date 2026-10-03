@@ -157,29 +157,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     libglfw3 \
     libsoil1 \
+    redis-server \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# MongoDB server for self-contained Render deployments (VIDX_EMBEDDED_MONGO).
+# Official mongodb-org repo for Debian bullseye; only the server package is installed.
+RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+    gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg && \
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" \
+      > /etc/apt/sources.list.d/mongodb-org-7.0.list && \
+    apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ─── Python Dependencies Layer ──────────────────────────────────────────────
 FROM runtime-deps AS python-builder
 
-ENV POETRY_VERSION=1.8.2 \
-    POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_CREATE=false
+# uv is the project's package manager (uv.lock is the source of truth).
+COPY --from=ghcr.io/astral-sh/uv:0.8.23 /uv /uvx /usr/local/bin/
 
 WORKDIR /tmp
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION && \
-    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
-
 # Copy project files required to resolve dependencies
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
-# Install poetry-managed tooling (no virtualenv) then export locked dependencies
-# and build wheels for those dependencies. Because this only depends on the lockfile,
-# Docker can cache it when app source changes.
-RUN poetry install --only main --no-interaction --no-ansi && \
-    poetry export --format requirements.txt --output requirements.txt --without-hashes --only main && \
+# Export locked runtime dependencies and build wheels for them. This only
+# depends on the lockfile, so Docker can cache it when app source changes.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements.txt && \
     python -m pip wheel -r requirements.txt -w /wheels && \
     rm -rf /root/.cache/pip && \
     find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
@@ -214,9 +217,9 @@ COPY --from=python-builder --chown=vidx:vidx /usr/local/lib/python3.11/site-pack
 WORKDIR /app
 
 # Make entrypoint executable
-COPY --chown=vidx:vidx docker-entrypoint.sh /usr/local/bin/
-RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
-    chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY --chown=vidx:vidx docker-entrypoint.sh render-entrypoint.sh /usr/local/bin/
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh /usr/local/bin/render-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/render-entrypoint.sh
 
 # Copy pre-built wheels from the python-builder stage and install them. Installing wheels
 # is cache-friendly: if dependencies haven't changed, this layer will be cached and
