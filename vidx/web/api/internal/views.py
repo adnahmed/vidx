@@ -23,13 +23,13 @@ async def upload_artifact(request: Request, file: UploadFile = File(...)) -> dic
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
     if request.headers.get("X-Internal-Token") != settings.internal_token:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token."
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token.",
         )
 
     name = Path(file.filename or "artifact").name.replace("\\", "_").replace("/", "_")
     if not name or ".." in name:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid artifact name."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid artifact name.",
         )
 
     data = await file.read()

@@ -176,7 +176,7 @@ class SocialPublishingService:
 
             try:
                 image_url = await get_storage_provider().generate_download_url(
-                    post.image_ref
+                    post.image_ref,
                 )
                 if not image_url.startswith(("http://", "https://")):
                     # Local storage: expose through the public media route so

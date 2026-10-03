@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Directory for locally stored generated artifacts (local storage mode).
     local_storage_dir: str = os.environ.get("VIDX_LOCAL_STORAGE_DIR") or str(
-        TEMP_DIR / "vidx-media"
+        TEMP_DIR / "vidx-media",
     )
 
     # Split-deployment artifact bridge. When a worker runs in a separate
