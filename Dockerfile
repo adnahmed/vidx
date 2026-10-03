@@ -1,6 +1,6 @@
 # ─── FFmpeg Builder Stage ───────────────────────────────────────────────────
 # This stage builds FFmpeg with GL Transitions support
-FROM python:3.11.4-slim-bullseye AS ffmpeg-builder
+FROM python:3.11-slim-bookworm AS ffmpeg-builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
     SRC_DIR=/opt/ffmpeg_sources \
@@ -120,7 +120,7 @@ RUN rm -rf $SRC_DIR && \
 
 # ─── Dependencies Layer ─────────────────────────────────────────────────────
 # This layer contains only runtime dependencies
-FROM python:3.11.4-slim-bullseye AS runtime-deps
+FROM python:3.11-slim-bookworm AS runtime-deps
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -141,19 +141,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libass9 \
     libva2 \
     libfreetype6 \
-    libvpx6 \
+    libvpx7 \
     libmp3lame0 \
     libopus0 \
     libtheora0 \
     libvorbis0a \
     libvorbisenc2 \
-    libx264-160 \
-    libx265-192 \
+    libx264-164 \
+    libx265-199 \
     libxvidcore4 \
     libva-drm2 \
     libva-x11-2 \
     libvdpau1 \
-    libglew2.1 \
+    libglew2.2 \
     libegl1 \
     libglfw3 \
     libsoil1 \
@@ -161,10 +161,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # MongoDB server for self-contained Render deployments (VIDX_EMBEDDED_MONGO).
-# Official mongodb-org repo for Debian bullseye; only the server package is installed.
+# Official mongodb-org repo for Debian bookworm; only the server package is installed.
 RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
     gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg && \
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" \
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" \
       > /etc/apt/sources.list.d/mongodb-org-7.0.list && \
     apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
