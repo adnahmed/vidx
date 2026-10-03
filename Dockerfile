@@ -158,6 +158,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglfw3 \
     libsoil1 \
     redis-server \
+    gnupg \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # MongoDB server for self-contained Render deployments (VIDX_EMBEDDED_MONGO).
