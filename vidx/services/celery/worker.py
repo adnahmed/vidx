@@ -25,6 +25,11 @@ class CeleryWorker:
                 "vidx.tasks.*": {"queue": settings.rabbitmq_queue_name},
             },
             "task_default_queue": settings.rabbitmq_queue_name,
+            # At-least-once delivery: if a worker is lost mid-task (e.g. the
+            # instance is OOM-killed during an ffmpeg render), the broker
+            # redelivers the task instead of dropping it silently.
+            "task_acks_late": True,
+            "task_reject_on_worker_lost": True,
             "beat_schedule": {
                 "publish-due-social-posts": {
                     "task": "vidx.tasks.publish_due_social_posts",

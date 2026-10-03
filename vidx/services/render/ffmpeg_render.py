@@ -159,6 +159,13 @@ class RenderService:
             "23",
             "-pix_fmt",
             "yuv420p",
+            # Cap encoder threads: the container may see all host CPUs, and
+            # libx264 allocates per-thread buffers/threads accordingly, which
+            # easily exceeds small instance memory limits.
+            "-threads",
+            "1",
+            "-x264-params",
+            "threads=1:lookahead_threads=1",
             "-c:a",
             "aac",
             "-b:a",
@@ -264,6 +271,10 @@ class RenderService:
             "23",
             "-pix_fmt",
             "yuv420p",
+            "-threads",
+            "1",
+            "-x264-params",
+            "threads=1:lookahead_threads=1",
             "-c:a",
             "aac",
             "-b:a",

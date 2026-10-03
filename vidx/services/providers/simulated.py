@@ -183,11 +183,15 @@ class SimulatedProvider(AIProvider):
                 "veryfast",
                 "-pix_fmt",
                 "yuv420p",
+                "-threads",
+                "1",
+                "-x264-params",
+                "threads=1:lookahead_threads=1",
                 "-c:a",
                 "aac",
                 "-shortest",
                 str(target),
-            ],
+            ]
         )
         return target
 
